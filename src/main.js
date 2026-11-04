@@ -123,7 +123,8 @@ async function buildWorld() {
 
   const hero = scoutGLTF.scene;
   normalizeModel(hero, 2.45);
-  hero.position.set(4.6, 0, 0.3);
+  hero.position.x = 4.6;
+  hero.position.z = 0.3; // preserve the ground offset from normalizeModel
   hero.rotation.y = 0; // Gobkit characters face +Z, toward the camera
   world.add(hero);
   const heroMixer = new THREE.AnimationMixer(hero);
@@ -136,7 +137,8 @@ async function buildWorld() {
 
   const companion = foxGLTF.scene;
   normalizeModel(companion, 1.05);
-  companion.position.set(3.0, 0, -1.7);
+  companion.position.x = 3.0;
+  companion.position.z = -1.7; // preserve the ground offset from normalizeModel
   companion.rotation.y = 0;
   world.add(companion);
   const foxMixer = new THREE.AnimationMixer(companion);
@@ -201,7 +203,7 @@ function animate() {
     // A gentle looping stride across the path; the fox follows a beat behind.
     actors.hero.position.x = 4.6 + Math.sin(t * .22) * .42;
     actors.hero.position.z = .3 + Math.cos(t * .22) * .3;
-    actors.hero.rotation.y = Math.PI + Math.sin(t * .22) * .12;
+    actors.hero.rotation.y = Math.sin(t * .22) * .12;
     actors.companion.position.x = 3.0 + Math.sin(t * .22 - .42) * .48;
     actors.companion.position.z = -1.7 + Math.cos(t * .22 - .42) * .34;
     actors.companion.rotation.y = Math.sin(t * .22 - .42) * .14;
