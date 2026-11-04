@@ -160,14 +160,29 @@ function setAction(actor, name, loop = true, restart = false) {
 }
 
 const actorsReady = Promise.all([
-  loadActor(assetUrls.hero, [0, .2, 1.05], 2.65),
-  loadActor(assetUrls.corgi, [-1.45, .22, -3.55], .58),
-  loadActor(assetUrls.duck, [0, .22, -4.05], .52),
-  loadActor(assetUrls.bat, [1.45, .22, -3.55], .48)
-]).then(([hero, corgi, duck, bat]) => {
+  loadActor(assetUrls.hero, [0, .2, 1.05], 3.0),
+  ...[]
+]);
+const actorsReady = loadActor(assetUrls.hero, [0, .2, 1.05], 3.0).then(async (hero) => {
   setAction(hero, 'idle');
-  for (const animal of [corgi, duck, bat]) setAction(animal, 'idle');
-  return { hero, animals: [corgi, duck, bat] };
+  const animalSpecs = [
+    ['corgi', [-1.85, .22, -1.75], 1.0],
+    ['duck', [0, .22, -2.25], .95],
+    ['bat', [1.85, .22, -1.75], .9]
+  ];
+  const results = await Promise.allSettled(animalSpecs.map(([key, position, scale]) =>
+    loadActor(assetUrls[key], position, scale)
+  ));
+  const animals = [];
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      setAction(result.value, 'idle');
+      animals.push(result.value);
+    } else {
+      console.error(`Animal model failed: ${animalSpecs[index][0]}`, result.reason);
+    }
+  });
+  return { hero, animals };
 });
 
 let actors = null;
@@ -175,7 +190,7 @@ actorsReady.then((result) => {
   actors = result;
   for (const actor of [actors.hero, ...actors.animals]) {
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(actor === actors.hero ? .9 : .42, 24),
+      new THREE.CircleGeometry(actor === actors.hero ? 1.0 : .62, 24),
       new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false })
     );
     shadow.rotation.x = -Math.PI / 2;
