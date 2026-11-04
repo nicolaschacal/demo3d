@@ -112,8 +112,9 @@ for (const x of [-3.65, 3.65]) {
 const loader = new GLTFLoader();
 const assetUrls = {
   hero: 'https://gobkit.com/freebies/human003/KnightCaptain.glb',
-  brute: 'https://gobkit.com/freebies/human011/WerewolfCaptain.glb',
-  mossling: 'https://gobkit.com/freebies/human011/StitchedBrute.glb'
+  corgi: 'https://gobkit.com/freebies/animal/Corgi.glb',
+  duck: 'https://gobkit.com/freebies/animal/Duck.glb',
+  bat: 'https://gobkit.com/freebies/animal/Bat.glb'
 };
 async function loadActor(url, position, uniformScale) {
   const gltf = await loader.loadAsync(url);
@@ -159,22 +160,22 @@ function setAction(actor, name, loop = true, restart = false) {
 }
 
 const actorsReady = Promise.all([
-  loadActor(assetUrls.hero, [0, .2, 1.05], 2.4),
-  loadActor(assetUrls.brute, [1.3, .22, -1.05], 2.4),
-  loadActor(assetUrls.mossling, [-1.3, .22, -1.15], 2.4)
-]).then(([hero, brute, mossling]) => {
+  loadActor(assetUrls.hero, [0, .2, 1.05], 2.65),
+  loadActor(assetUrls.corgi, [-1.45, .22, -3.55], .58),
+  loadActor(assetUrls.duck, [0, .22, -4.05], .52),
+  loadActor(assetUrls.bat, [1.45, .22, -3.55], .48)
+]).then(([hero, corgi, duck, bat]) => {
   setAction(hero, 'idle');
-  setAction(brute, 'idle');
-  setAction(mossling, 'idle');
-  return { hero, brute, mossling };
+  for (const animal of [corgi, duck, bat]) setAction(animal, 'idle');
+  return { hero, animals: [corgi, duck, bat] };
 });
 
 let actors = null;
 actorsReady.then((result) => {
   actors = result;
-  for (const actor of [actors.hero, actors.brute, actors.mossling]) {
+  for (const actor of [actors.hero, ...actors.animals]) {
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(actor === actors.hero ? .9 : .82, 24),
+      new THREE.CircleGeometry(actor === actors.hero ? .9 : .42, 24),
       new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false })
     );
     shadow.rotation.x = -Math.PI / 2;
@@ -222,9 +223,9 @@ function moveEnemy(actor, hero, delta) {
   faceToward(actor, hero.root);
 
   if (distance > 1.5) {
-    const running = distance > 2.8;
-    const speed = running ? 1.55 : .9;
-    setAction(actor, running ? 'run' : 'walk');
+    const speed = distance > 2.8 ? 1.05 : .72;
+    // These animal rigs provide a walk cycle; don't request a missing run clip.
+    setAction(actor, actor.actions.walk ? 'walk' : 'idle');
     direction.normalize();
     actor.root.position.x += direction.x * speed * delta;
     actor.root.position.z += direction.z * speed * delta;
@@ -235,7 +236,7 @@ function moveEnemy(actor, hero, delta) {
 
 function updateActors(delta) {
   if (!actors) return;
-  const { hero, brute, mossling } = actors;
+  const { hero, animals } = actors;
 
   hero.actionTimer += delta;
   if (hero.current === 'attack' || hero.current === 'special') {
@@ -246,11 +247,9 @@ function updateActors(delta) {
     }
   }
 
-  moveEnemy(brute, hero, delta);
-  moveEnemy(mossling, hero, delta);
+  for (const animal of animals) moveEnemy(animal, hero, delta);
   hero.mixer.update(delta);
-  brute.mixer.update(delta);
-  mossling.mixer.update(delta);
+  for (const animal of animals) animal.mixer.update(delta);
 }
 
 // Floating embers remain independent from the character controller.
