@@ -115,29 +115,12 @@ const assetUrls = {
   brute: 'https://gobkit.com/freebies/human011/WerewolfCaptain.glb',
   mossling: 'https://gobkit.com/freebies/human011/StitchedBrute.glb'
 };
-function getRestBounds(model) {
-  // Measure authored mesh geometry in bind pose, without evaluating animated bones.
-  model.updateMatrixWorld(true);
-  const bounds = new THREE.Box3();
-  const meshBounds = new THREE.Box3();
-  model.traverse((object) => {
-    if (!object.isMesh || !object.geometry) return;
-    if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
-    if (!object.geometry.boundingBox) return;
-    meshBounds.copy(object.geometry.boundingBox).applyMatrix4(object.matrixWorld);
-    bounds.union(meshBounds);
-  });
-  return bounds;
-}
-
-async function loadActor(url, position, targetHeight) {
+async function loadActor(url, position, uniformScale) {
   const gltf = await loader.loadAsync(url);
   const model = cloneSkinned(gltf.scene);
-  const restBounds = getRestBounds(model);
-  const authoredHeight = Math.max(restBounds.getSize(new THREE.Vector3()).y, 0.001);
-  const scale = targetHeight / authoredHeight;
-  model.scale.setScalar(scale);
-  model.position.y = -restBounds.min.y * scale;
+  // Fixed, conservative scale multiplier: never infer scale from animated/skinned bounds.
+  model.scale.setScalar(uniformScale);
+  model.position.set(0, 0, 0);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -176,9 +159,9 @@ function setAction(actor, name, loop = true, restart = false) {
 }
 
 const actorsReady = Promise.all([
-  loadActor(assetUrls.hero, [0, .2, 1.05], 2.85),
-  loadActor(assetUrls.brute, [1.3, .22, -1.05], 2.9),
-  loadActor(assetUrls.mossling, [-1.3, .22, -1.15], 2.75)
+  loadActor(assetUrls.hero, [0, .2, 1.05], 2.4),
+  loadActor(assetUrls.brute, [1.3, .22, -1.05], 2.4),
+  loadActor(assetUrls.mossling, [-1.3, .22, -1.15], 2.4)
 ]).then(([hero, brute, mossling]) => {
   setAction(hero, 'idle');
   setAction(brute, 'idle');
