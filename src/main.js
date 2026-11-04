@@ -1,205 +1,273 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const canvas = document.querySelector('#world');
 const loading = document.querySelector('#loading');
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color('#b9c9d0');
-scene.fog = new THREE.Fog('#b9c9d0', 13, 25);
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#1b2a32');
+scene.fog = new THREE.FogExp2('#1b2a32', 0.035);
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 1.22;
 
-const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 60);
-camera.position.set(0, 4.1, 9.5);
-camera.lookAt(0, 0.85, -0.5);
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 80);
+camera.position.set(0, 4.7, 11.8);
+camera.lookAt(0, 1.15, -0.35);
 
-scene.add(new THREE.HemisphereLight(0xeaf7ff, 0x6c6557, 2.1));
-const sun = new THREE.DirectionalLight(0xffedcf, 3.1);
-sun.position.set(-4, 8, 5);
-sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.left = -7;
-sun.shadow.camera.right = 7;
-sun.shadow.camera.top = 8;
-sun.shadow.camera.bottom = -7;
-scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xb8d3dc, 0x4a3a32, 1.65));
+const keyLight = new THREE.DirectionalLight(0xffd8a4, 3.0);
+keyLight.position.set(-4, 9, 7);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(1536, 1536);
+keyLight.shadow.camera.left = -8;
+keyLight.shadow.camera.right = 8;
+keyLight.shadow.camera.top = 9;
+keyLight.shadow.camera.bottom = -8;
+keyLight.shadow.bias = -0.0004;
+scene.add(keyLight);
+const rimLight = new THREE.PointLight(0x6aa6cf, 35, 16, 2);
+rimLight.position.set(3, 4, -5);
+scene.add(rimLight);
+const fireLight = new THREE.PointLight(0xff8a42, 22, 10, 2);
+fireLight.position.set(-3.4, 2.2, -2.7);
+scene.add(fireLight);
 
-const groundMat = new THREE.MeshStandardMaterial({ color: '#829b79', roughness: 1 });
-const ground = new THREE.Mesh(new THREE.CircleGeometry(5.2, 48), groundMat);
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -0.03;
-ground.receiveShadow = true;
-scene.add(ground);
-
-const ring = new THREE.Mesh(
-  new THREE.TorusGeometry(4.55, 0.055, 8, 64),
-  new THREE.MeshStandardMaterial({ color: '#d7bd83', roughness: .8 })
-);
-ring.rotation.x = Math.PI / 2;
-ring.position.y = 0.015;
-scene.add(ring);
-
-const loader = new GLTFLoader();
-const urls = {
-  hero: 'https://gobkit.com/freebies/human003/Footman.glb',
-  corgi: 'https://gobkit.com/freebies/animal/Corgi.glb',
-  duck: 'https://gobkit.com/freebies/animal/Duck.glb',
-  bat: 'https://gobkit.com/freebies/animal/Bat.glb'
+const mat = (color, roughness = 0.8, metalness = 0) =>
+  new THREE.MeshStandardMaterial({ color, roughness, metalness, flatShading: true });
+const mats = {
+  stone: mat('#52616a'), stoneDark: mat('#34434d'), floor: mat('#59665b'),
+  sand: mat('#9b8060'), gold: mat('#d9a45d', .45, .35), steel: mat('#a8c3c9', .3, .65),
+  leather: mat('#503b30'), cloth: mat('#356d76'), scarf: mat('#d8784d'),
+  skin: mat('#e1b58d'), hair: mat('#3a2e2b'), boot: mat('#262d32'),
+  monster: mat('#8c6657'), monsterLight: mat('#bd8c6d'), horn: mat('#e5d2a7'),
+  eye: new THREE.MeshStandardMaterial({ color: '#f5d36d', emissive: '#9a4d1e', emissiveIntensity: 1.8, roughness: .3 }),
+  dark: mat('#1b2228'), crystal: new THREE.MeshStandardMaterial({ color: '#5d9ba6', emissive: '#285b68', emissiveIntensity: .7, roughness: .3 })
 };
 
-// Gobkit models use meter units. Fixed per-model scales avoid unstable
-// bounding-box normalization (which can explode on skinned rigs).
-async function loadActor(url, scale, position, kind) {
+function mesh(geometry, material, parent, position = [0, 0, 0], cast = true) {
+  const object = new THREE.Mesh(geometry, material);
+  object.position.set(...position);
+  object.castShadow = cast;
+  object.receiveShadow = true;
+  parent.add(object);
+  return object;
+}
+function group(parent, position = [0, 0, 0]) {
+  const g = new THREE.Group();
+  g.position.set(...position);
+  parent.add(g);
+  return g;
+}
+function limb(parent, material, length, radius, position, rotation = [0, 0, 0]) {
+  const part = mesh(new THREE.CapsuleGeometry(radius, Math.max(.02, length - radius * 2), 3, 6), material, parent, position);
+  part.rotation.set(...rotation);
+  return part;
+}
+
+const arena = new THREE.Group();
+scene.add(arena);
+mesh(new THREE.CylinderGeometry(5.15, 5.45, .42, 12), mats.stoneDark, arena, [0, -.25, -.25]);
+mesh(new THREE.CylinderGeometry(4.98, 5.12, .2, 12), mats.sand, arena, [0, .02, -.25]);
+mesh(new THREE.CylinderGeometry(4.68, 4.85, .1, 12), mats.floor, arena, [0, .16, -.25], false);
+
+// Scattered polygonal paving stones create a readable floor without obscuring the fighters.
+for (let i = 0; i < 22; i++) {
+  const angle = (i / 22) * Math.PI * 2;
+  const radius = 2.3 + (i % 4) * .42;
+  const tile = mesh(new THREE.CylinderGeometry(.32, .38, .035, 5), i % 3 ? mats.stone : mats.sand, arena,
+    [Math.cos(angle) * radius, .23, Math.sin(angle) * radius - .25], false);
+  tile.rotation.y = angle;
+}
+
+// Broken pillars and rock silhouettes frame the arena at the back.
+for (let i = 0; i < 9; i++) {
+  const x = -4.5 + i * 1.12;
+  const z = -4.05 - (i % 2) * .35;
+  const height = 1.5 + (i % 3) * .55;
+  const pillar = group(arena, [x, .2, z]);
+  const rock = mesh(new THREE.CylinderGeometry(.35, .52, height, 5), i % 2 ? mats.stone : mats.stoneDark, pillar, [0, height / 2, 0]);
+  rock.rotation.z = (i % 2 ? 1 : -1) * .08;
+  mesh(new THREE.ConeGeometry(.45, .38, 5), mats.stone, pillar, [0, height + .05, 0]);
+}
+for (const x of [-3.65, 3.65]) {
+  const torch = group(arena, [x, .2, -2.6]);
+  mesh(new THREE.CylinderGeometry(.09, .14, 1.3, 6), mats.leather, torch, [0, .65, 0]);
+  const flame = mesh(new THREE.IcosahedronGeometry(.19, 1), mat('#ff9c4c', .35), torch, [0, 1.42, 0], false);
+  flame.material.emissive = new THREE.Color('#ff5d21');
+  flame.material.emissiveIntensity = 1.5;
+  const glow = new THREE.PointLight(0xff8a42, 8, 5);
+  glow.position.set(0, 1.55, .15);
+  torch.add(glow);
+}
+
+// Rigged CC0 characters are loaded as real GLB assets, not approximated with primitive shapes.
+const loader = new GLTFLoader();
+const assetUrls = {
+  hero: 'https://gobkit.com/freebies/human003/KnightCaptain.glb',
+  brute: 'https://gobkit.com/freebies/human011/WerewolfCaptain.glb',
+  mossling: 'https://gobkit.com/freebies/human011/StitchedBrute.glb'
+};
+async function loadActor(url, position, targetHeight) {
   const gltf = await loader.loadAsync(url);
-  const model = gltf.scene;
+  const model = cloneSkinned(gltf.scene);
+  const bounds = new THREE.Box3().setFromObject(model);
+  const size = bounds.getSize(new THREE.Vector3());
+  const scale = targetHeight / Math.max(size.y, .001);
   model.scale.setScalar(scale);
-  model.position.set(0, 0, 0);
-  model.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
+  const scaledBounds = new THREE.Box3().setFromObject(model);
+  model.position.y -= scaledBounds.min.y;
+  model.traverse((object) => {
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
     }
   });
-  const root = new THREE.Group();
-  root.position.set(...position);
+  const root = group(scene, position);
   root.add(model);
-  scene.add(root);
-
   const mixer = new THREE.AnimationMixer(model);
+  const clips = gltf.animations;
   const actions = {};
-  for (const clip of gltf.animations) {
-    actions[clip.name.toLowerCase()] = mixer.clipAction(clip);
-  }
-  const actor = { root, model, mixer, actions, current: null, kind, alive: true, busy: false };
-  play(actor, 'idle');
+  for (const clip of clips) actions[clip.name.toLowerCase()] = mixer.clipAction(clip);
+  const actor = { root, model, mixer, actions, current: null };
   return actor;
 }
-
-function play(actor, name, loop = true) {
-  const key = name.toLowerCase();
-  const next = actor.actions[key];
-  if (!next || actor.current === key) return;
+function setAction(actor, name, loop = true) {
+  const action = actor.actions[name.toLowerCase()];
+  if (!action || actor.current === name.toLowerCase()) return;
   const previous = actor.current ? actor.actions[actor.current] : null;
-  next.reset();
-  next.enabled = true;
-  next.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-  next.clampWhenFinished = !loop;
-  next.fadeIn(.12).play();
-  if (previous) previous.fadeOut(.12);
-  actor.current = key;
+  action.reset();
+  action.enabled = true;
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  action.clampWhenFinished = !loop;
+  action.fadeIn(.18).play();
+  if (previous) previous.fadeOut(.18);
+  actor.current = name.toLowerCase();
 }
-
-let hero;
-let animals = [];
-let lastAttack = 0;
-
-const clickable = new THREE.Mesh(
-  new THREE.SphereGeometry(.78, 16, 12),
-  new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
-);
-clickable.position.set(0, .92, 1.05);
-clickable.userData.isHeroHitArea = true;
-scene.add(clickable);
-
-const allReady = Promise.all([
-  loadActor(urls.hero, .82, [0, 0, 1.05], 'hero'),
-  loadActor(urls.corgi, .58, [-1.45, 0, -3.55], 'animal'),
-  loadActor(urls.duck, .52, [0, 0, -4.05], 'animal'),
-  loadActor(urls.bat, .48, [1.45, 0, -3.55], 'animal')
-]).then(([h, ...critters]) => {
-  hero = h;
-  animals = critters;
+const actorsReady = Promise.all([
+  loadActor(assetUrls.hero, [0, .2, 1.05], 2.25),
+  loadActor(assetUrls.brute, [1.3, .22, -1.05], 2.05),
+  loadActor(assetUrls.mossling, [-1.3, .22, -1.15], 1.8)
+]).then(([hero, brute, mossling]) => {
+  setAction(hero, 'idle');
+  setAction(brute, 'idle');
+  setAction(mossling, 'idle');
+  return { hero, brute, mossling };
+});
+let actors = null;
+actorsReady.then((result) => {
+  actors = result;
   loading.classList.add('done');
-}).catch((err) => {
-  console.error('Gobkit model loading failed:', err);
+}).catch((error) => {
+  console.error('Could not load the 3D characters:', error);
   loading.textContent = 'No se pudieron cargar los personajes. Recargá la página.';
 });
-
-function attackFromTap() {
-  if (!hero || hero.busy) return;
-  const now = performance.now();
-  if (now - lastAttack < 700) return;
-  const target = animals
-    .filter(a => a.alive && !a.busy)
-    .sort((a, b) => a.root.position.distanceTo(hero.root.position) - b.root.position.distanceTo(hero.root.position))[0];
-  if (!target) return;
-
-  lastAttack = now;
-  hero.busy = true;
-  play(hero, 'attack', false);
-  hero.mixer.addEventListener('finished', function onHeroAttack(event) {
-    if (event.action !== hero.actions.attack) return;
-    hero.mixer.removeEventListener('finished', onHeroAttack);
-    hero.busy = false;
-    play(hero, 'idle');
-  });
-
-  target.busy = true;
-  // The animal reacts, then plays its own rigged death clip.
-  window.setTimeout(() => {
-    if (!target.alive) return;
-    play(target, 'dead', false);
-    target.alive = false;
-  }, 430);
+// Ground contact shadows are soft and local; no fullscreen haze or white overlay.
+for (const [x, z, radius] of [[0,1.05,.82],[1.3,-1.05,.72],[-1.3,-1.15,.6]]) {
+  const shadow = mesh(new THREE.CircleGeometry(radius, 20), new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false }), scene, [x,.245,z], false);
+  shadow.rotation.x = -Math.PI / 2;
 }
 
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-canvas.addEventListener('pointerdown', (event) => {
-  const rect = canvas.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  if (raycaster.intersectObject(clickable, false).length) attackFromTap();
-});
+// Floating embers and dust give the scene a little movement.
+const particles = new THREE.Group();
+scene.add(particles);
+const emberMat = new THREE.MeshBasicMaterial({ color: '#f4b66d' });
+for (let i = 0; i < 34; i++) {
+  const p = mesh(new THREE.SphereGeometry(.018 + Math.random() * .018, 5, 4), emberMat, particles,
+    [(Math.random() - .5) * 8, .5 + Math.random() * 4.2, -4 + Math.random() * 7], false);
+  p.userData.offset = Math.random() * Math.PI * 2;
+}
 
 const clock = new THREE.Clock();
-function update(delta) {
-  if (!hero) return;
-  for (const animal of animals) {
-    if (!animal.alive || animal.busy) continue;
-    const dx = hero.root.position.x - animal.root.position.x;
-    const dz = hero.root.position.z - animal.root.position.z;
-    const distance = Math.hypot(dx, dz);
-    if (distance > 1.55) {
-      play(animal, 'walk');
-      const step = Math.min(delta * .78, distance - 1.48);
-      animal.root.position.x += (dx / distance) * step;
-      animal.root.position.z += (dz / distance) * step;
-      // Gobkit rigs face local +Z.
-      animal.root.rotation.y = Math.atan2(dx, dz);
-    } else {
-      play(animal, 'idle');
-    }
+let elapsed = 0;
+const duration = 22;
+const smooth = (a, b, x) => {
+  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+function animateBattle(time, delta) {
+  if (!actors) return;
+  const t = time % duration;
+  const { hero, brute, mossling } = actors;
+  hero.root.position.x = 0 + Math.sin(t * .45) * .04;
+  hero.root.position.z = 1.05 - smooth(1, 4, t) * .28 + smooth(8, 10, t) * .18;
+  hero.root.rotation.y = Math.PI + Math.sin(t * .3) * .08;
+  brute.root.position.x = 1.3 - smooth(2.8, 4.2, t) * .48 + smooth(8, 9.5, t) * .32;
+  brute.root.position.z = -1.05 + smooth(2.8, 4.2, t) * .55 - smooth(8, 9.5, t) * .25;
+  brute.root.rotation.y = Math.sin(time * 2) * .08;
+  mossling.root.position.x = -1.3 + Math.sin(time * 1.1) * .12;
+  mossling.root.position.z = -1.15 + Math.sin(time * 1.5) * .08;
+  mossling.root.rotation.y = Math.sin(time * 1.7) * .08;
+
+  // Named rig animations drive each beat of the fight.
+  if (t < 3) {
+    setAction(hero, 'idle'); setAction(brute, 'idle'); setAction(mossling, 'idle');
+    
+  } else if (t < 6) {
+    setAction(hero, 'hit', false); setAction(brute, 'attack', false); setAction(mossling, 'idle');
+    const k = smooth(3, 4.2, t) * (1 - smooth(4.8, 6, t));
+    brute.root.position.x -= k * .5;
+    brute.root.position.z += k * .65;
+    hero.root.position.x -= k * .18;
+    
+  } else if (t < 10) {
+    setAction(hero, 'attack', false); setAction(brute, 'hit', false); setAction(mossling, 'idle');
+    brute.root.rotation.z = .42 * smooth(6.8, 7.8, t) * (1 - smooth(8.8, 9.8, t));
+    brute.root.position.x += smooth(6.8, 7.5, t) * (1 - smooth(8.8, 9.8, t)) * .48;
+    
+
+  } else if (t < 15) {
+    setAction(hero, 'special', false); setAction(brute, 'idle'); setAction(mossling, 'attack', false);
+    const charge = smooth(10, 11.3, t) * (1 - smooth(13.4, 14.8, t));
+    mossling.root.position.x += charge * .72;
+    mossling.root.position.z += charge * .55;
+    hero.root.rotation.y = Math.PI - .35 * charge;
+    
+
+  } else if (t < 19) {
+    setAction(hero, 'attack', false); setAction(brute, 'death', false); setAction(mossling, 'hit', false);
+    mossling.root.rotation.z = .38 * smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t));
+    mossling.root.position.x -= smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t)) * .42;
+    
+
+  } else {
+    setAction(hero, 'idle'); setAction(brute, 'death', false); setAction(mossling, 'death', false);
+    
   }
   hero.mixer.update(delta);
-  for (const animal of animals) animal.mixer.update(delta);
+  brute.mixer.update(delta);
+  mossling.mixer.update(delta);
+  particles.children.forEach((p, i) => {
+    p.position.y = .55 + ((time * (.12 + (i % 4) * .025) + p.userData.offset) % 4.2);
+    p.position.x += Math.sin(time + p.userData.offset) * .0008;
+  });
 }
-
 function resize() {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.fov = w < 700 ? 38 : 34;
-  camera.position.set(0, w < 700 ? 4.4 : 4.1, w < 700 ? 10.4 : 9.5);
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  renderer.setSize(width, height, false);
+  camera.aspect = width / height;
+  camera.fov = width < 700 ? 36 : 34;
+  camera.position.set(0, width < 700 ? 4.7 : 4.8, width < 700 ? 11.8 : 12.2);
   camera.updateProjectionMatrix();
-  camera.lookAt(0, .85, -.5);
+  camera.lookAt(0, 1.15, -.35);
 }
 window.addEventListener('resize', resize);
 resize();
 
 function render() {
   requestAnimationFrame(render);
-  const delta = Math.min(clock.getDelta(), .04);
-  update(delta);
+  const delta = Math.min(clock.getDelta(), .05);
+  elapsed += delta;
+  animateBattle(elapsed, delta);
+  fireLight.intensity = 20 + Math.sin(elapsed * 7) * 4;
   renderer.render(scene, camera);
 }
 render();
