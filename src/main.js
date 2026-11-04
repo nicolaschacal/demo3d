@@ -124,7 +124,7 @@ async function buildWorld() {
   const hero = scoutGLTF.scene;
   normalizeModel(hero, 2.45);
   hero.position.set(4.6, 0, 0.3);
-  hero.rotation.y = Math.PI; // face along the trail toward the viewer
+  hero.rotation.y = 0; // Gobkit characters face +Z, toward the camera
   world.add(hero);
   const heroMixer = new THREE.AnimationMixer(hero);
   mixers.push(heroMixer);
@@ -136,8 +136,8 @@ async function buildWorld() {
 
   const companion = foxGLTF.scene;
   normalizeModel(companion, 1.05);
-  companion.position.set(3.0, 0, 2.0);
-  companion.rotation.y = Math.PI;
+  companion.position.set(3.0, 0, -1.7);
+  companion.rotation.y = 0;
   world.add(companion);
   const foxMixer = new THREE.AnimationMixer(companion);
   mixers.push(foxMixer);
@@ -203,8 +203,8 @@ function animate() {
     actors.hero.position.z = .3 + Math.cos(t * .22) * .3;
     actors.hero.rotation.y = Math.PI + Math.sin(t * .22) * .12;
     actors.companion.position.x = 3.0 + Math.sin(t * .22 - .42) * .48;
-    actors.companion.position.z = 2.0 + Math.cos(t * .22 - .42) * .34;
-    actors.companion.rotation.y = Math.PI + Math.sin(t * .22 - .42) * .14;
+    actors.companion.position.z = -1.7 + Math.cos(t * .22 - .42) * .34;
+    actors.companion.rotation.y = Math.sin(t * .22 - .42) * .14;
     actors.fireflies.children.forEach((dot,i) => {
       dot.position.y += Math.sin(t * 1.8 + i) * .0009;
     });
