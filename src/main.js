@@ -187,10 +187,6 @@ for (let i = 0; i < 34; i++) {
 
 const clock = new THREE.Clock();
 let elapsed = 0;
-let lastPhase = -1;
-let recording = false;
-let recorder = null;
-let recordedChunks = [];
 const duration = 22;
 const smooth = (a, b, x) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
@@ -232,11 +228,11 @@ function animateBattle(time, delta) {
     const charge = smooth(10, 11.3, t) * (1 - smooth(13.4, 14.8, t));
     mossling.root.position.x += charge * .72;
     mossling.root.position.z += charge * .55;
-    hero.root.rotation.y = -.35 * charge;
+    hero.root.rotation.y = Math.PI - .35 * charge;
     
 
   } else if (t < 19) {
-    setAction(hero, 'attack', false); setAction(brute, 'dead', false); setAction(mossling, 'hit', false);
+    setAction(hero, 'attack', false); setAction(brute, 'death', false); setAction(mossling, 'hit', false);
     mossling.root.rotation.z = .38 * smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t));
     mossling.root.position.x -= smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t)) * .42;
     
