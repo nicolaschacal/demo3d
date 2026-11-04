@@ -118,12 +118,11 @@ const assetUrls = {
 async function loadActor(url, position, targetHeight) {
   const gltf = await loader.loadAsync(url);
   const model = cloneSkinned(gltf.scene);
-  const bounds = new THREE.Box3().setFromObject(model);
-  const size = bounds.getSize(new THREE.Vector3());
-  const scale = targetHeight / Math.max(size.y, .001);
-  model.scale.setScalar(scale);
-  const scaledBounds = new THREE.Box3().setFromObject(model);
-  model.position.y -= scaledBounds.min.y;
+  // Gobkit GLBs are authored in meters with their own rig proportions.
+  // Do not normalize skinned characters from a Box3: animated bone bounds
+  // can produce wildly incorrect scales and distort the intended character size.
+  model.scale.setScalar(1);
+  model.position.set(0, 0, 0);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -140,8 +139,11 @@ async function loadActor(url, position, targetHeight) {
   return actor;
 }
 function setAction(actor, name, loop = true) {
-  const action = actor.actions[name.toLowerCase()];
-  if (!action || actor.current === name.toLowerCase()) return;
+  const requested = name.toLowerCase();
+  const aliases = { death: 'dead', hit: 'idle', special: 'attack' };
+  const actionName = actor.actions[requested] ? requested : (aliases[requested] || requested);
+  const action = actor.actions[actionName];
+  if (!action || actor.current === actionName) return;
   const previous = actor.current ? actor.actions[actor.current] : null;
   action.reset();
   action.enabled = true;
@@ -149,7 +151,7 @@ function setAction(actor, name, loop = true) {
   action.clampWhenFinished = !loop;
   action.fadeIn(.18).play();
   if (previous) previous.fadeOut(.18);
-  actor.current = name.toLowerCase();
+  actor.current = actionName;
 }
 const actorsReady = Promise.all([
   loadActor(assetUrls.hero, [0, .2, 1.05], 2.25),
