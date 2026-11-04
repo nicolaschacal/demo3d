@@ -192,42 +192,24 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-const actorsReady = loadActor(assetUrls.hero, [0, .2, 1.05], 5.0).then(async (hero) => {
+const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then(async (hero) => {
+  hero.root.rotation.y = Math.PI;
   setAction(hero, 'idle');
+  // Procedural, always-visible animal enemies avoid external GLB loading failures.
   const animalSpecs = [
-    ['corgi', [-2.0, .22, -1.15], 2.5],
-    ['duck', [0, .22, -1.9], 2.35],
-    ['bat', [2.0, .22, -1.15], 2.4]
+    ['corgi', [-3.0, .22, 2.65], 2.8],
+    ['duck', [0, .22, 3.35], 2.65],
+    ['bat', [3.0, .22, 2.65], 2.75]
   ];
-  const results = await Promise.allSettled(animalSpecs.map(([key, position, scale]) =>
-    loadActor(assetUrls[key], position, scale)
-  ));
-  const animals = [];
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      setAction(result.value, 'idle');
-      animals.push(result.value);
-    } else {
-      console.error(`Animal model failed: ${animalSpecs[index][0]}`, result.reason);
-      animals.push(createFallbackEnemy(animalSpecs[index][0], animalSpecs[index][1], animalSpecs[index][2]));
-    }
-  });
+  const animals = animalSpecs.map(([kind, position, scale]) =>
+    createFallbackEnemy(kind, position, scale)
+  );
   return { hero, animals };
 });
 
 let actors = null;
 actorsReady.then((result) => {
   actors = result;
-  for (const actor of [actors.hero, ...actors.animals]) {
-    const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(actor === actors.hero ? 1.0 : .62, 24),
-      new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false })
-    );
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.set(0, .045, 0);
-    shadow.renderOrder = 1;
-    actor.root.add(shadow);
-  }
   loading.classList.add('done');
 }).catch((error) => {
   console.error('Could not load the 3D characters:', error);
@@ -309,7 +291,7 @@ function moveEnemy(actor, hero, delta) {
   const distance = direction.length();
   faceToward(actor, hero.root);
 
-  if (distance > 1.5) {
+  if (distance > 2.0) {
     const speed = distance > 2.8 ? 1.05 : .72;
     // These animal rigs provide a walk cycle; don't request a missing run clip.
     if (!actor.fallback) setAction(actor, actor.actions.walk ? 'walk' : 'idle');
@@ -325,7 +307,7 @@ function moveEnemy(actor, hero, delta) {
 function updateActors(delta) {
   if (!actors) return;
   let x = moveVector.x + (keysDown.has('d') || keysDown.has('arrowright') ? 1 : 0) - (keysDown.has('a') || keysDown.has('arrowleft') ? 1 : 0);
-  let z = moveVector.y + (keysDown.has('w') || keysDown.has('arrowup') ? 1 : 0) - (keysDown.has('s') || keysDown.has('arrowdown') ? 1 : 0);
+  let z = -moveVector.y - (keysDown.has('w') || keysDown.has('arrowup') ? 1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') ? 1 : 0);
   const inputLength = Math.hypot(x, z);
   if (inputLength > 0.12) {
     x /= Math.max(1, inputLength); z /= Math.max(1, inputLength);
