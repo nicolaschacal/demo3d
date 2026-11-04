@@ -140,6 +140,39 @@ async function loadActor(url, position, uniformScale) {
   };
 }
 
+
+function createFallbackEnemy(kind, position, scale) {
+  const root = group(scene, position);
+  const bodyMat = mat(kind === 'corgi' ? '#b97843' : kind === 'duck' ? '#e6c84d' : '#665b83', .85);
+  const darkMat = mat('#302a2a');
+  const body = mesh(new THREE.SphereGeometry(.42, 9, 7), bodyMat, root, [0, .62, 0]);
+  body.scale.set(1.25, .8, 1.65);
+  mesh(new THREE.SphereGeometry(.27, 9, 7), bodyMat, root, [0, .85, .48]);
+  if (kind === 'corgi') {
+    for (const x of [-.18, .18]) {
+      const ear = mesh(new THREE.ConeGeometry(.1, .34, 5), bodyMat, root, [x, 1.13, .52]);
+      ear.rotation.z = x < 0 ? .18 : -.18;
+    }
+  } else if (kind === 'duck') {
+    mesh(new THREE.ConeGeometry(.12, .3, 5), mat('#e58b36'), root, [0, .82, .82]).rotation.x = Math.PI / 2;
+    mesh(new THREE.SphereGeometry(.09, 7, 5), darkMat, root, [-.12, .95, .67]);
+    mesh(new THREE.SphereGeometry(.09, 7, 5), darkMat, root, [.12, .95, .67]);
+  } else {
+    for (const side of [-1, 1]) {
+      const wing = mesh(new THREE.ConeGeometry(.28, .8, 5), bodyMat, root, [side * .55, .65, 0]);
+      wing.rotation.z = side * -1.05;
+    }
+    mesh(new THREE.SphereGeometry(.08, 7, 5), mats.eye, root, [-.12, .91, .68]);
+    mesh(new THREE.SphereGeometry(.08, 7, 5), mats.eye, root, [.12, .91, .68]);
+  }
+  for (const x of [-.25, .25]) for (const z of [-.32, .32]) {
+    mesh(new THREE.CylinderGeometry(.07, .08, .42, 5), bodyMat, root, [x, .27, z]);
+  }
+  root.scale.setScalar(scale * .55);
+  return { root, model: root, mixer: null, actions: {}, current: null, actionTimer: 0,
+    home: new THREE.Vector3(...position), speed: 0, fallback: true, bob: Math.random() * 6 };
+}
+
 function setAction(actor, name, loop = true, restart = false) {
   const actionName = name.toLowerCase();
   const action = actor.actions[actionName];
@@ -159,12 +192,12 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-const actorsReady = loadActor(assetUrls.hero, [0, .2, 1.05], 3.0).then(async (hero) => {
+const actorsReady = loadActor(assetUrls.hero, [0, .2, 1.05], 5.0).then(async (hero) => {
   setAction(hero, 'idle');
   const animalSpecs = [
-    ['corgi', [-1.85, .22, -1.75], 1.0],
-    ['duck', [0, .22, -2.25], .95],
-    ['bat', [1.85, .22, -1.75], .9]
+    ['corgi', [-2.0, .22, -1.15], 2.5],
+    ['duck', [0, .22, -1.9], 2.35],
+    ['bat', [2.0, .22, -1.15], 2.4]
   ];
   const results = await Promise.allSettled(animalSpecs.map(([key, position, scale]) =>
     loadActor(assetUrls[key], position, scale)
@@ -176,6 +209,7 @@ const actorsReady = loadActor(assetUrls.hero, [0, .2, 1.05], 3.0).then(async (he
       animals.push(result.value);
     } else {
       console.error(`Animal model failed: ${animalSpecs[index][0]}`, result.reason);
+      animals.push(createFallbackEnemy(animalSpecs[index][0], animalSpecs[index][1], animalSpecs[index][2]));
     }
   });
   return { hero, animals };
@@ -204,6 +238,48 @@ actorsReady.then((result) => {
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let nextHeroAttack = 'attack';
+const keysDown = new Set();
+const moveVector = new THREE.Vector2();
+const joystick = document.querySelector('#joystick');
+const stick = document.querySelector('#stick');
+let joystickPointer = null;
+let joystickOrigin = null;
+window.addEventListener('keydown', (event) => {
+  const key = event.key.toLowerCase();
+  if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(key)) {
+    if (key !== ' ') event.preventDefault();
+    keysDown.add(key);
+  }
+  if (key === ' ' && actors) { setAction(actors.hero, 'attack', false, true); actors.hero.actionTimer = 0; }
+});
+window.addEventListener('keyup', (event) => keysDown.delete(event.key.toLowerCase()));
+window.addEventListener('blur', () => keysDown.clear());
+if (joystick && stick) {
+  const updateStick = (event) => {
+    const dx = event.clientX - joystickOrigin.x;
+    const dy = event.clientY - joystickOrigin.y;
+    const length = Math.min(42, Math.hypot(dx, dy));
+    const angle = Math.atan2(dy, dx);
+    const x = Math.cos(angle) * length, y = Math.sin(angle) * length;
+    stick.style.transform = `translate(${x}px, ${y}px)`;
+    moveVector.set(x / 42, -y / 42);
+  };
+  joystick.addEventListener('pointerdown', (event) => {
+    event.preventDefault(); joystickPointer = event.pointerId;
+    joystickOrigin = { x: event.clientX, y: event.clientY };
+    joystick.setPointerCapture(event.pointerId); updateStick(event);
+  });
+  joystick.addEventListener('pointermove', (event) => {
+    if (event.pointerId === joystickPointer) updateStick(event);
+  });
+  const releaseStick = (event) => {
+    if (event.pointerId !== joystickPointer) return;
+    joystickPointer = null; joystickOrigin = null; moveVector.set(0, 0);
+    stick.style.transform = 'translate(0, 0)';
+  };
+  joystick.addEventListener('pointerup', releaseStick);
+  joystick.addEventListener('pointercancel', releaseStick);
+}
 canvas.style.touchAction = 'manipulation';
 canvas.addEventListener('pointerdown', (event) => {
   if (!actors) return;
@@ -236,17 +312,28 @@ function moveEnemy(actor, hero, delta) {
   if (distance > 1.5) {
     const speed = distance > 2.8 ? 1.05 : .72;
     // These animal rigs provide a walk cycle; don't request a missing run clip.
-    setAction(actor, actor.actions.walk ? 'walk' : 'idle');
+    if (!actor.fallback) setAction(actor, actor.actions.walk ? 'walk' : 'idle');
+    else actor.root.position.y = .22 + Math.sin(elapsed * 5 + actor.bob) * .08;
     direction.normalize();
     actor.root.position.x += direction.x * speed * delta;
     actor.root.position.z += direction.z * speed * delta;
   } else {
-    setAction(actor, 'idle');
+    if (!actor.fallback) setAction(actor, 'idle');
   }
 }
 
 function updateActors(delta) {
   if (!actors) return;
+  let x = moveVector.x + (keysDown.has('d') || keysDown.has('arrowright') ? 1 : 0) - (keysDown.has('a') || keysDown.has('arrowleft') ? 1 : 0);
+  let z = moveVector.y + (keysDown.has('w') || keysDown.has('arrowup') ? 1 : 0) - (keysDown.has('s') || keysDown.has('arrowdown') ? 1 : 0);
+  const inputLength = Math.hypot(x, z);
+  if (inputLength > 0.12) {
+    x /= Math.max(1, inputLength); z /= Math.max(1, inputLength);
+    actors.hero.root.position.x = THREE.MathUtils.clamp(actors.hero.root.position.x + x * 2.8 * delta, -3.25, 3.25);
+    actors.hero.root.position.z = THREE.MathUtils.clamp(actors.hero.root.position.z + z * 2.8 * delta, -2.8, 2.6);
+    actors.hero.root.rotation.y = Math.atan2(x, z);
+    if (actors.hero.current === 'idle') setAction(actors.hero, 'walk');
+  } else if (actors.hero.current === 'walk') setAction(actors.hero, 'idle');
   const { hero, animals } = actors;
 
   hero.actionTimer += delta;
@@ -260,7 +347,7 @@ function updateActors(delta) {
 
   for (const animal of animals) moveEnemy(animal, hero, delta);
   hero.mixer.update(delta);
-  for (const animal of animals) animal.mixer.update(delta);
+  for (const animal of animals) if (animal.mixer) animal.mixer.update(delta);
 }
 
 // Floating embers remain independent from the character controller.
@@ -293,7 +380,6 @@ function render() {
   const delta = Math.min(clock.getDelta(), .05);
   elapsed += delta;
   updateActors(delta);
-  elapsed += delta;
   particles.children.forEach((p, i) => {
     p.position.y = .55 + ((elapsed * (.12 + (i % 4) * .025) + p.userData.offset) % 4.2);
     p.position.x += Math.sin(elapsed + p.userData.offset) * .0008;
