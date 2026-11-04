@@ -4,21 +4,52 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#101a24" />
-  <meta name="description" content="Una escena de combate 3D en tiempo real." />
-  <title>The Last Stand — 3D scene</title>
+  <meta name="description" content="The Last Stand — una experiencia 3D interactiva." />
+  <title>The Last Stand — Una experiencia 3D</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
   <main class="experience">
-    <canvas id="world" aria-label="Escena 3D de combate fantasy"></canvas>
+    <canvas id="world" aria-label="Escena 3D de un caballero en una arena"></canvas>
+    <div class="scene-shade"></div>
     <div class="loading" id="loading"><span class="loader"></span></div>
+
+    <header class="site-header">
+      <a class="wordmark" href="#" aria-label="The Last Stand inicio"><span class="wordmark-mark">✳</span> LAST STAND</a>
+      <div class="header-note"><span class="live-dot"></span> EXPERIENCIA INTERACTIVA</div>
+    </header>
+
+    <section class="intro" id="intro">
+      <div class="intro-copy">
+        <p class="eyebrow"><span></span> UNA AVENTURA EN 3D</p>
+        <h1>THE LAST<br><em>STAND.</em></h1>
+        <p class="intro-description">Una última batalla. Un solo caballero.<br>Tu historia empieza en la arena.</p>
+        <div class="intro-actions">
+          <button class="button button-primary" id="start-button">ENTRAR A LA ARENA <span>↗</span></button>
+          <button class="button button-secondary" id="controls-button">CÓMO JUGAR <span>＋</span></button>
+        </div>
+        <p class="intro-footnote">EXPLORÁ · MOVETE · DESCUBRÍ</p>
+      </div>
+      <div class="intro-index"><span>01</span><span class="index-line"></span><span>THE BEGINNING</span></div>
+    </section>
+
+    <aside class="controls-panel" id="controls-panel" aria-label="Controles del juego">
+      <button class="panel-close" id="close-controls" aria-label="Cerrar">×</button>
+      <p class="eyebrow">CONTROLES</p>
+      <h2>Tomá el control.</h2>
+      <div class="control-row"><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span><p>Mover al caballero</p></div>
+      <div class="control-row"><span class="keycap wide">SPACE</span><p>Atacar</p></div>
+      <p class="panel-mobile-note">En pantallas táctiles, usá el joystick de la esquina inferior izquierda.</p>
+    </aside>
+
     <div class="controls-hint">WASD / FLECHAS · ESPACIO PARA ATACAR</div>
     <div class="joystick" id="joystick" aria-label="Joystick virtual para mover al personaje">
       <div class="joystick-ring"></div><div class="joystick-stick" id="stick"></div>
     </div>
+    <footer class="site-footer"><span>THE LAST STAND © 2026</span><span>POWERED BY THREE.JS</span></footer>
   </main>
   <script type="module" src="/src/main.js"></script>
 </body>
