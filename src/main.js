@@ -4,6 +4,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const canvas = document.querySelector('#world');
 const loading = document.querySelector('#loading');
+const victoryMessage = document.querySelector('#victory-message');
 
 const intro = document.querySelector('#intro');
 const startButton = document.querySelector('#start-button');
@@ -214,6 +215,14 @@ const enemies = [
   createMonster([-1.8, .2, -2.45], 0),
   createMonster([1.9, .2, -3.35], 1)
 ];
+let victoryShown = false;
+function checkVictory() {
+  if (!victoryShown && enemies.every((enemy) => enemy.dead)) {
+    victoryShown = true;
+    victoryMessage?.classList.add('is-visible');
+    victoryMessage?.setAttribute('aria-hidden', 'false');
+  }
+}
 
 // Attack with Space or tap/click in the arena.
 let nextHeroAttack = 'attack';
@@ -311,6 +320,7 @@ function updateActors(delta) {
         if (target.health <= 0) {
           target.dead = true;
           target.root.visible = false;
+          checkVictory();
         }
       }
     }
