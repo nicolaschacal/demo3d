@@ -122,9 +122,6 @@ for (const x of [-3.65, 3.65]) {
 const loader = new GLTFLoader();
 const assetUrls = {
   hero: 'https://gobkit.com/freebies/human003/KnightCaptain.glb',
-  corgi: 'https://gobkit.com/freebies/animal/Corgi.glb',
-  duck: 'https://gobkit.com/freebies/animal/Duck.glb',
-  bat: 'https://gobkit.com/freebies/animal/Bat.glb'
 };
 async function loadActor(url, position, uniformScale, targetHeight = null) {
   const gltf = await loader.loadAsync(url);
@@ -176,49 +173,60 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-// The knight is accompanied by a corgi and a duck. They follow behind, never attack.
-let actors = { hero: null, companions: [] };
-const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then(async (hero) => {
+// The knight returns to the arena alone.
+let actors = { hero: null };
+const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then((hero) => {
   hero.root.rotation.y = Math.PI;
   setAction(hero, 'idle');
   actors.hero = hero;
   loading.classList.add('done');
-
-  const companionSpecs = [
-    { url: assetUrls.corgi, side: -.62, distance: 1.55, height: .82, phase: 0 },
-    { url: assetUrls.duck, side: .62, distance: 1.9, height: .68, phase: 1.8 }
-  ];
-  const loaded = await Promise.allSettled(companionSpecs.map((spec) =>
-    loadActor(spec.url, [spec.side, .2, 2.2], 1, spec.height)
-  ));
-  loaded.forEach((result, index) => {
-    if (result.status !== 'fulfilled') {
-      console.warn('Could not load companion:', result.reason);
-      return;
-    }
-    const companion = result.value;
-    companion.side = companionSpecs[index].side;
-    companion.distance = companionSpecs[index].distance;
-    companion.phase = companionSpecs[index].phase;
-    companion.root.rotation.y = Math.PI;
-    const names = Object.keys(companion.actions);
-    const idle = names.find(name => name.includes('idle'));
-    const walk = names.find(name => name.includes('walk') || name.includes('run'));
-    companion.idleAction = idle || null;
-    companion.walkAction = walk || null;
-    if (companion.idleAction) setAction(companion, companion.idleAction);
-    actors.companions.push(companion);
-  });
 }).catch((error) => {
   console.error('Could not load the knight model:', error);
   loading.textContent = 'No se pudo cargar el personaje. Recargá la página.';
   loading.classList.add('done');
 });
 
-// Tap/click the hero to attack. Alternate the two authored offensive moves.
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
+// Two hostile monsters patrol the arena and pursue the knight.
+function createMonster(position, variant = 0) {
+  const root = group(scene, position);
+  const bodyMat = variant ? mat('#4c7770', .7) : mats.monster;
+  const detailMat = variant ? mat('#82a89a', .65) : mats.monsterLight;
+  const visual = group(root);
+  const torso = mesh(new THREE.IcosahedronGeometry(.48, 1), bodyMat, visual, [0, .92, 0]);
+  torso.scale.set(.88, 1.18, .7);
+  const belly = mesh(new THREE.SphereGeometry(.29, 8, 6), detailMat, visual, [0, .78, .31]);
+  belly.scale.set(1, .85, .45);
+  const head = group(visual, [0, 1.62, .02]);
+  mesh(new THREE.DodecahedronGeometry(.36, 1), bodyMat, head, [0, 0, 0]);
+  for (const side of [-1, 1]) {
+    const horn = mesh(new THREE.ConeGeometry(.105, .42, 5), mats.horn, head, [side * .23, .34, -.015]);
+    horn.rotation.z = side * -.42;
+    const eye = mesh(new THREE.SphereGeometry(.065, 8, 6), mats.eye, head, [side * .14, .035, .31], false);
+    eye.scale.set(1, .75, .5);
+    limb(visual, bodyMat, .76, .15, [side * .48, 1.02, .02], [0, 0, side * -.48]);
+    limb(visual, bodyMat, .55, .16, [side * .2, .3, 0], [0, 0, side * -.08]);
+  }
+  const healthBack = mesh(new THREE.PlaneGeometry(.8, .09), mats.dark, root, [0, 2.25, 0], false);
+  const healthFill = mesh(new THREE.PlaneGeometry(.76, .055), mat('#d76e55'), root, [0, 2.25, .006], false);
+  return { root, visual, healthFill, health: 3, maxHealth: 3, speed: variant ? .62 : .48, phase: variant * 2.1, hitFlash: 0, dead: false };
+}
+const enemies = [
+  createMonster([-1.8, .2, -2.45], 0),
+  createMonster([1.9, .2, -3.35], 1)
+];
+
+// Attack with Space or tap/click in the arena.
 let nextHeroAttack = 'attack';
+let attackCooldown = 0;
+let attackHasHit = false;
+function performAttack() {
+  if (!actors.hero || attackCooldown > 0) return;
+  setAction(actors.hero, nextHeroAttack, false, true);
+  actors.hero.actionTimer = 0;
+  nextHeroAttack = nextHeroAttack === 'attack' ? 'special' : 'attack';
+  attackCooldown = .62;
+  attackHasHit = false;
+}
 const keysDown = new Set();
 const moveVector = new THREE.Vector2();
 const joystick = document.querySelector('#joystick');
@@ -231,7 +239,7 @@ window.addEventListener('keydown', (event) => {
     if (key !== ' ') event.preventDefault();
     keysDown.add(key);
   }
-  if (key === ' ' && actors?.hero) { setAction(actors.hero, 'attack', false, true); actors.hero.actionTimer = 0; }
+  if (key === ' ') performAttack();
 });
 window.addEventListener('keyup', (event) => keysDown.delete(event.key.toLowerCase()));
 window.addEventListener('blur', () => keysDown.clear());
@@ -262,66 +270,78 @@ if (joystick && stick) {
   joystick.addEventListener('pointercancel', releaseStick);
 }
 canvas.style.touchAction = 'manipulation';
-canvas.addEventListener('pointerdown', (event) => {
-  if (!actors?.hero) return;
-  const rect = canvas.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  if (!raycaster.intersectObject(actors.hero.root, true).length) return;
-  event.preventDefault();
-  setAction(actors.hero, nextHeroAttack, false, true);
-  actors.hero.actionTimer = 0;
-  nextHeroAttack = nextHeroAttack === 'attack' ? 'special' : 'attack';
-}, { passive: false });
+canvas.addEventListener('pointerdown', () => performAttack(), { passive: true });
 
 function updateActors(delta) {
-  if (!actors?.hero) return;
+  if (!actors.hero) return;
   let x = moveVector.x + (keysDown.has('d') || keysDown.has('arrowright') ? 1 : 0) - (keysDown.has('a') || keysDown.has('arrowleft') ? 1 : 0);
   let z = -moveVector.y - (keysDown.has('w') || keysDown.has('arrowup') ? 1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') ? 1 : 0);
   const inputLength = Math.hypot(x, z);
-  if (inputLength > 0.12) {
+  if (inputLength > .12) {
     x /= Math.max(1, inputLength); z /= Math.max(1, inputLength);
     actors.hero.root.position.x = THREE.MathUtils.clamp(actors.hero.root.position.x + x * 2.8 * delta, -3.25, 3.25);
     actors.hero.root.position.z = THREE.MathUtils.clamp(actors.hero.root.position.z + z * 2.8 * delta, -2.8, 2.6);
     actors.hero.root.rotation.y = Math.atan2(x, z);
     if (actors.hero.current === 'idle') setAction(actors.hero, 'walk');
   } else if (actors.hero.current === 'walk') setAction(actors.hero, 'idle');
-  const { hero } = actors;
 
+  const hero = actors.hero;
   hero.actionTimer += delta;
+  attackCooldown = Math.max(0, attackCooldown - delta);
   if (hero.current === 'attack' || hero.current === 'special') {
-    const duration = hero.actions[hero.current]?.getClip().duration ?? 1;
+    const duration = hero.actions[hero.current]?.getClip().duration ?? .8;
+    if (!attackHasHit && hero.actionTimer >= Math.min(.22, duration * .32)) {
+      attackHasHit = true;
+      const facing = new THREE.Vector3(Math.sin(hero.root.rotation.y), 0, Math.cos(hero.root.rotation.y));
+      let target = null, bestDistance = 2.2;
+      enemies.forEach((enemy) => {
+        if (enemy.dead) return;
+        const offset = enemy.root.position.clone().sub(hero.root.position);
+        const distance = offset.length();
+        if (distance < .9 || (distance < bestDistance && offset.normalize().dot(facing) > .1)) {
+          if (distance < bestDistance) { target = enemy; bestDistance = distance; }
+        }
+      });
+      if (target) {
+        target.health -= 1;
+        target.hitFlash = .25;
+        const ratio = Math.max(0, target.health / target.maxHealth);
+        target.healthFill.scale.x = ratio;
+        target.healthFill.position.x = -.38 * (1 - ratio);
+        if (target.health <= 0) {
+          target.dead = true;
+          target.root.visible = false;
+        }
+      }
+    }
     if (hero.actionTimer >= duration) {
       setAction(hero, 'idle');
       hero.actionTimer = 0;
     }
   }
-
   hero.mixer.update(delta);
 
-  // Keep both companions a little behind the knight, with gentle follow smoothing.
-  const forwardX = Math.sin(hero.root.rotation.y);
-  const forwardZ = Math.cos(hero.root.rotation.y);
-  const sideX = Math.cos(hero.root.rotation.y);
-  const sideZ = -Math.sin(hero.root.rotation.y);
-  actors.companions.forEach((companion) => {
-    const targetX = hero.root.position.x - forwardX * companion.distance + sideX * companion.side;
-    const targetZ = hero.root.position.z - forwardZ * companion.distance + sideZ * companion.side;
-    const dx = targetX - companion.root.position.x;
-    const dz = targetZ - companion.root.position.z;
-    const distanceToTarget = Math.hypot(dx, dz);
-    companion.root.position.x += dx * Math.min(1, delta * 4.5);
-    companion.root.position.z += dz * Math.min(1, delta * 4.5);
-    companion.root.position.y = .2 + Math.sin(elapsed * 3.2 + companion.phase) * .025;
-    companion.root.rotation.y = hero.root.rotation.y;
-    const following = distanceToTarget > .16;
-    const desiredAction = following ? companion.walkAction : companion.idleAction;
-    if (desiredAction && companion.current !== desiredAction) setAction(companion, desiredAction);
-    companion.mixer.update(delta);
+  enemies.forEach((enemy) => {
+    if (enemy.dead) return;
+    const dx = hero.root.position.x - enemy.root.position.x;
+    const dz = hero.root.position.z - enemy.root.position.z;
+    const distance = Math.hypot(dx, dz);
+    if (distance > 1.05) {
+      enemy.root.position.x += (dx / distance) * enemy.speed * delta;
+      enemy.root.position.z += (dz / distance) * enemy.speed * delta;
+    }
+    enemy.root.rotation.y = Math.atan2(dx, dz);
+    enemy.phase += delta * (distance > 1.05 ? 7 : 3);
+    enemy.visual.position.y = Math.sin(enemy.phase) * .035;
+    enemy.visual.rotation.z = Math.sin(enemy.phase * .5) * .045;
+    if (enemy.hitFlash > 0) {
+      enemy.hitFlash -= delta;
+      enemy.visual.scale.setScalar(1 + Math.sin(enemy.hitFlash * 55) * .08);
+    } else enemy.visual.scale.setScalar(1);
+    enemy.healthBack?.quaternion?.copy(camera.quaternion);
+    enemy.healthFill.quaternion.copy(camera.quaternion);
   });
 }
-
 // Floating embers remain independent from the character controller.
 const particles = new THREE.Group();
 scene.add(particles);
