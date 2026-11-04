@@ -115,69 +115,162 @@ const assetUrls = {
   brute: 'https://gobkit.com/freebies/human011/WerewolfCaptain.glb',
   mossling: 'https://gobkit.com/freebies/human011/StitchedBrute.glb'
 };
+function getRestBounds(model) {
+  // Measure authored mesh geometry in bind pose, without evaluating animated bones.
+  model.updateMatrixWorld(true);
+  const bounds = new THREE.Box3();
+  const meshBounds = new THREE.Box3();
+  model.traverse((object) => {
+    if (!object.isMesh || !object.geometry) return;
+    if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+    if (!object.geometry.boundingBox) return;
+    meshBounds.copy(object.geometry.boundingBox).applyMatrix4(object.matrixWorld);
+    bounds.union(meshBounds);
+  });
+  return bounds;
+}
+
 async function loadActor(url, position, targetHeight) {
   const gltf = await loader.loadAsync(url);
   const model = cloneSkinned(gltf.scene);
-  // Gobkit GLBs are authored in meters with their own rig proportions.
-  // Do not normalize skinned characters from a Box3: animated bone bounds
-  // can produce wildly incorrect scales and distort the intended character size.
-  model.scale.setScalar(1);
-  model.position.set(0, 0, 0);
+  const restBounds = getRestBounds(model);
+  const authoredHeight = Math.max(restBounds.getSize(new THREE.Vector3()).y, 0.001);
+  const scale = targetHeight / authoredHeight;
+  model.scale.setScalar(scale);
+  model.position.y = -restBounds.min.y * scale;
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
       object.receiveShadow = true;
     }
   });
+
   const root = group(scene, position);
   root.add(model);
   const mixer = new THREE.AnimationMixer(model);
-  const clips = gltf.animations;
   const actions = {};
-  for (const clip of clips) actions[clip.name.toLowerCase()] = mixer.clipAction(clip);
-  const actor = { root, model, mixer, actions, current: null };
-  return actor;
+  for (const clip of gltf.animations) actions[clip.name.toLowerCase()] = mixer.clipAction(clip);
+  return {
+    root, model, mixer, actions, current: null, actionTimer: 0,
+    home: new THREE.Vector3(...position), speed: 0
+  };
 }
-function setAction(actor, name, loop = true) {
-  const requested = name.toLowerCase();
-  const aliases = { death: 'dead', hit: 'idle', special: 'attack' };
-  const actionName = actor.actions[requested] ? requested : (aliases[requested] || requested);
+
+function setAction(actor, name, loop = true, restart = false) {
+  const actionName = name.toLowerCase();
   const action = actor.actions[actionName];
-  if (!action || actor.current === actionName) return;
+  if (!action) {
+    console.warn(`Animation "${name}" not found. Available:`, Object.keys(actor.actions));
+    return false;
+  }
+  if (actor.current === actionName && !restart) return false;
   const previous = actor.current ? actor.actions[actor.current] : null;
   action.reset();
   action.enabled = true;
   action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
   action.clampWhenFinished = !loop;
-  action.fadeIn(.18).play();
-  if (previous) previous.fadeOut(.18);
+  action.fadeIn(.16).play();
+  if (previous && previous !== action) previous.fadeOut(.16);
   actor.current = actionName;
+  return true;
 }
+
 const actorsReady = Promise.all([
-  loadActor(assetUrls.hero, [0, .2, 1.05], 2.25),
-  loadActor(assetUrls.brute, [1.3, .22, -1.05], 2.05),
-  loadActor(assetUrls.mossling, [-1.3, .22, -1.15], 1.8)
+  loadActor(assetUrls.hero, [0, .2, 1.05], 2.85),
+  loadActor(assetUrls.brute, [1.3, .22, -1.05], 2.9),
+  loadActor(assetUrls.mossling, [-1.3, .22, -1.15], 2.75)
 ]).then(([hero, brute, mossling]) => {
   setAction(hero, 'idle');
   setAction(brute, 'idle');
   setAction(mossling, 'idle');
   return { hero, brute, mossling };
 });
+
 let actors = null;
 actorsReady.then((result) => {
   actors = result;
+  for (const actor of [actors.hero, actors.brute, actors.mossling]) {
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(actor === actors.hero ? .9 : .82, 24),
+      new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false })
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.set(0, .045, 0);
+    shadow.renderOrder = 1;
+    actor.root.add(shadow);
+  }
   loading.classList.add('done');
 }).catch((error) => {
   console.error('Could not load the 3D characters:', error);
   loading.textContent = 'No se pudieron cargar los personajes. Recargá la página.';
 });
-// Ground contact shadows are soft and local; no fullscreen haze or white overlay.
-for (const [x, z, radius] of [[0,1.05,.82],[1.3,-1.05,.72],[-1.3,-1.15,.6]]) {
-  const shadow = mesh(new THREE.CircleGeometry(radius, 20), new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false }), scene, [x,.245,z], false);
-  shadow.rotation.x = -Math.PI / 2;
+
+// Tap/click the hero to attack. Alternate the two authored offensive moves.
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let nextHeroAttack = 'attack';
+canvas.style.touchAction = 'manipulation';
+canvas.addEventListener('pointerdown', (event) => {
+  if (!actors) return;
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  if (!raycaster.intersectObject(actors.hero.root, true).length) return;
+  event.preventDefault();
+  setAction(actors.hero, nextHeroAttack, false, true);
+  actors.hero.actionTimer = 0;
+  nextHeroAttack = nextHeroAttack === 'attack' ? 'special' : 'attack';
+}, { passive: false });
+
+function faceToward(actor, target) {
+  const dx = target.x - actor.root.position.x;
+  const dz = target.z - actor.root.position.z;
+  actor.root.rotation.y = Math.atan2(dx, dz);
 }
 
-// Floating embers and dust give the scene a little movement.
+function moveEnemy(actor, hero, delta) {
+  const direction = new THREE.Vector3(
+    hero.root.position.x - actor.root.position.x,
+    0,
+    hero.root.position.z - actor.root.position.z
+  );
+  const distance = direction.length();
+  faceToward(actor, hero.root);
+
+  if (distance > 1.5) {
+    const running = distance > 2.8;
+    const speed = running ? 1.55 : .9;
+    setAction(actor, running ? 'run' : 'walk');
+    direction.normalize();
+    actor.root.position.x += direction.x * speed * delta;
+    actor.root.position.z += direction.z * speed * delta;
+  } else {
+    setAction(actor, 'idle');
+  }
+}
+
+function updateActors(delta) {
+  if (!actors) return;
+  const { hero, brute, mossling } = actors;
+
+  hero.actionTimer += delta;
+  if (hero.current === 'attack' || hero.current === 'special') {
+    const duration = hero.actions[hero.current]?.getClip().duration ?? 1;
+    if (hero.actionTimer >= duration) {
+      setAction(hero, 'idle');
+      hero.actionTimer = 0;
+    }
+  }
+
+  moveEnemy(brute, hero, delta);
+  moveEnemy(mossling, hero, delta);
+  hero.mixer.update(delta);
+  brute.mixer.update(delta);
+  mossling.mixer.update(delta);
+}
+
+// Floating embers remain independent from the character controller.
 const particles = new THREE.Group();
 scene.add(particles);
 const emberMat = new THREE.MeshBasicMaterial({ color: '#f4b66d' });
@@ -189,68 +282,6 @@ for (let i = 0; i < 34; i++) {
 
 const clock = new THREE.Clock();
 let elapsed = 0;
-const duration = 22;
-const smooth = (a, b, x) => {
-  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
-  return t * t * (3 - 2 * t);
-};
-function animateBattle(time, delta) {
-  if (!actors) return;
-  const t = time % duration;
-  const { hero, brute, mossling } = actors;
-  hero.root.position.x = 0 + Math.sin(t * .45) * .04;
-  hero.root.position.z = 1.05 - smooth(1, 4, t) * .28 + smooth(8, 10, t) * .18;
-  hero.root.rotation.y = Math.PI + Math.sin(t * .3) * .08;
-  brute.root.position.x = 1.3 - smooth(2.8, 4.2, t) * .48 + smooth(8, 9.5, t) * .32;
-  brute.root.position.z = -1.05 + smooth(2.8, 4.2, t) * .55 - smooth(8, 9.5, t) * .25;
-  brute.root.rotation.y = Math.sin(time * 2) * .08;
-  mossling.root.position.x = -1.3 + Math.sin(time * 1.1) * .12;
-  mossling.root.position.z = -1.15 + Math.sin(time * 1.5) * .08;
-  mossling.root.rotation.y = Math.sin(time * 1.7) * .08;
-
-  // Named rig animations drive each beat of the fight.
-  if (t < 3) {
-    setAction(hero, 'idle'); setAction(brute, 'idle'); setAction(mossling, 'idle');
-    
-  } else if (t < 6) {
-    setAction(hero, 'hit', false); setAction(brute, 'attack', false); setAction(mossling, 'idle');
-    const k = smooth(3, 4.2, t) * (1 - smooth(4.8, 6, t));
-    brute.root.position.x -= k * .5;
-    brute.root.position.z += k * .65;
-    hero.root.position.x -= k * .18;
-    
-  } else if (t < 10) {
-    setAction(hero, 'attack', false); setAction(brute, 'hit', false); setAction(mossling, 'idle');
-    brute.root.rotation.z = .42 * smooth(6.8, 7.8, t) * (1 - smooth(8.8, 9.8, t));
-    brute.root.position.x += smooth(6.8, 7.5, t) * (1 - smooth(8.8, 9.8, t)) * .48;
-    
-
-  } else if (t < 15) {
-    setAction(hero, 'special', false); setAction(brute, 'idle'); setAction(mossling, 'attack', false);
-    const charge = smooth(10, 11.3, t) * (1 - smooth(13.4, 14.8, t));
-    mossling.root.position.x += charge * .72;
-    mossling.root.position.z += charge * .55;
-    hero.root.rotation.y = Math.PI - .35 * charge;
-    
-
-  } else if (t < 19) {
-    setAction(hero, 'attack', false); setAction(brute, 'death', false); setAction(mossling, 'hit', false);
-    mossling.root.rotation.z = .38 * smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t));
-    mossling.root.position.x -= smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t)) * .42;
-    
-
-  } else {
-    setAction(hero, 'idle'); setAction(brute, 'death', false); setAction(mossling, 'death', false);
-    
-  }
-  hero.mixer.update(delta);
-  brute.mixer.update(delta);
-  mossling.mixer.update(delta);
-  particles.children.forEach((p, i) => {
-    p.position.y = .55 + ((time * (.12 + (i % 4) * .025) + p.userData.offset) % 4.2);
-    p.position.x += Math.sin(time + p.userData.offset) * .0008;
-  });
-}
 function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -268,7 +299,12 @@ function render() {
   requestAnimationFrame(render);
   const delta = Math.min(clock.getDelta(), .05);
   elapsed += delta;
-  animateBattle(elapsed, delta);
+  updateActors(delta);
+  elapsed += delta;
+  particles.children.forEach((p, i) => {
+    p.position.y = .55 + ((elapsed * (.12 + (i % 4) * .025) + p.userData.offset) % 4.2);
+    p.position.x += Math.sin(elapsed + p.userData.offset) * .0008;
+  });
   fireLight.intensity = 20 + Math.sin(elapsed * 7) * 4;
   renderer.render(scene, camera);
 }
