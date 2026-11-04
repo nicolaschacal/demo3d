@@ -192,28 +192,25 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then(async (hero) => {
+// Create enemies immediately; their visibility must not depend on the hero GLB loading.
+const animalSpecs = [
+  ['corgi', [-3.25, .22, 3.15], 3.25],
+  ['duck', [0, .22, 3.75], 3.0],
+  ['bat', [3.25, .22, 3.15], 3.2]
+];
+const animals = animalSpecs.map(([kind, position, scale]) =>
+  createFallbackEnemy(kind, position, scale)
+);
+let actors = { hero: null, animals };
+const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then((hero) => {
   hero.root.rotation.y = Math.PI;
   setAction(hero, 'idle');
-  // Procedural, always-visible animal enemies avoid external GLB loading failures.
-  const animalSpecs = [
-    ['corgi', [-3.0, .22, 2.65], 2.8],
-    ['duck', [0, .22, 3.35], 2.65],
-    ['bat', [3.0, .22, 2.65], 2.75]
-  ];
-  const animals = animalSpecs.map(([kind, position, scale]) =>
-    createFallbackEnemy(kind, position, scale)
-  );
-  return { hero, animals };
-});
-
-let actors = null;
-actorsReady.then((result) => {
-  actors = result;
+  actors.hero = hero;
   loading.classList.add('done');
 }).catch((error) => {
-  console.error('Could not load the 3D characters:', error);
-  loading.textContent = 'No se pudieron cargar los personajes. Recargá la página.';
+  console.error('Could not load the knight model; animal enemies remain visible:', error);
+  loading.textContent = 'El caballero no pudo cargar. Los enemigos siguen disponibles.';
+  loading.classList.add('done');
 });
 
 // Tap/click the hero to attack. Alternate the two authored offensive moves.
@@ -306,6 +303,12 @@ function moveEnemy(actor, hero, delta) {
 
 function updateActors(delta) {
   if (!actors) return;
+  if (!actors.hero) {
+    for (const animal of actors.animals) {
+      animal.root.position.y = .22 + Math.sin(elapsed * 5 + animal.bob) * .08;
+    }
+    return;
+  }
   let x = moveVector.x + (keysDown.has('d') || keysDown.has('arrowright') ? 1 : 0) - (keysDown.has('a') || keysDown.has('arrowleft') ? 1 : 0);
   let z = -moveVector.y - (keysDown.has('w') || keysDown.has('arrowup') ? 1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') ? 1 : 0);
   const inputLength = Math.hypot(x, z);
