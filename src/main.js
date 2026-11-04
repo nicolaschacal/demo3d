@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const canvas = document.querySelector('#world');
 const loading = document.querySelector('#loading');
@@ -114,71 +116,67 @@ for (const x of [-3.65, 3.65]) {
   torch.add(glow);
 }
 
-// A stylized adventurer assembled from low-poly primitives.
-function makeHero() {
-  const root = group(scene, [-.55, .2, 1.05]);
-  const body = group(root, [0, .95, 0]);
-  mesh(new THREE.CylinderGeometry(.3, .39, .76, 7), mats.cloth, body, [0, 0, 0]);
-  mesh(new THREE.SphereGeometry(.34, 8, 7), mats.skin, body, [0, .63, .015]);
-  mesh(new THREE.SphereGeometry(.355, 8, 5, 0, Math.PI * 2, 0, Math.PI * .52), mats.hair, body, [0, .75, .015]);
-  mesh(new THREE.BoxGeometry(.48, .13, .4), mats.hair, body, [0, .83, -.015]).rotation.x = -.12;
-  mesh(new THREE.BoxGeometry(.62, .16, .13), mats.scarf, body, [0, .35, .23]).rotation.z = -.12;
-  mesh(new THREE.BoxGeometry(.13, .16, .12), mats.gold, body, [.18, .08, .22]);
-
-  const leftArm = group(body, [-.34, .28, 0]);
-  limb(leftArm, mats.skin, .72, .115, [0, -.3, .02], [0, 0, -.12]);
-  mesh(new THREE.SphereGeometry(.14, 7, 6), mats.leather, leftArm, [0, -.59, .02]);
-  const rightArm = group(body, [.34, .28, 0]);
-  limb(rightArm, mats.skin, .68, .12, [0, -.28, 0]);
-  mesh(new THREE.SphereGeometry(.14, 7, 6), mats.leather, rightArm, [0, -.58, 0]);
-  const sword = group(rightArm, [.04, -.62, .08]);
-  mesh(new THREE.BoxGeometry(.095, .88, .12), mats.steel, sword, [0, .48, 0]);
-  mesh(new THREE.BoxGeometry(.16, .11, .2), mats.gold, sword, [0, .04, 0]);
-  mesh(new THREE.BoxGeometry(.13, .28, .13), mats.leather, sword, [0, -.15, 0]);
-  mesh(new THREE.ConeGeometry(.075, .2, 4), mats.steel, sword, [0, .99, 0]);
-
-  const leftLeg = group(root, [-.18, .68, 0]);
-  limb(leftLeg, mats.boot, .72, .15, [0, -.3, 0]);
-  mesh(new THREE.BoxGeometry(.3, .16, .42), mats.leather, leftLeg, [0, -.64, .12]);
-  const rightLeg = group(root, [.18, .68, 0]);
-  limb(rightLeg, mats.boot, .72, .15, [0, -.3, 0]);
-  mesh(new THREE.BoxGeometry(.3, .16, .42), mats.leather, rightLeg, [0, -.64, .12]);
-  return { root, body, leftArm, rightArm, sword, leftLeg, rightLeg };
+// Rigged CC0 characters are loaded as real GLB assets, not approximated with primitive shapes.
+const loader = new GLTFLoader();
+const assetUrls = {
+  hero: 'https://gobkit.com/freebies/human003/Footman.glb',
+  brute: 'https://gobkit.com/freebies/minion/minion-a01.glb',
+  mossling: 'https://gobkit.com/freebies/minion/minion-b01.glb'
+};
+async function loadActor(url, position, targetHeight) {
+  const gltf = await loader.loadAsync(url);
+  const model = cloneSkinned(gltf.scene);
+  const bounds = new THREE.Box3().setFromObject(model);
+  const size = bounds.getSize(new THREE.Vector3());
+  const scale = targetHeight / Math.max(size.y, .001);
+  model.scale.setScalar(scale);
+  const scaledBounds = new THREE.Box3().setFromObject(model);
+  model.position.y -= scaledBounds.min.y;
+  model.traverse((object) => {
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
+  const root = group(scene, position);
+  root.add(model);
+  const mixer = new THREE.AnimationMixer(model);
+  const clips = gltf.animations;
+  const actions = {};
+  for (const clip of clips) actions[clip.name.toLowerCase()] = mixer.clipAction(clip);
+  const actor = { root, model, mixer, actions, current: null };
+  return actor;
 }
-
-function makeMonster(x, z, scale = 1, variant = 0) {
-  const root = group(scene, [x, .22, z]);
-  root.scale.setScalar(scale);
-  const skin = variant ? mat('#627d70') : mats.monster;
-  const light = variant ? mat('#9bb29a') : mats.monsterLight;
-  const torso = group(root, [0, .78, 0]);
-  mesh(new THREE.SphereGeometry(.57, 8, 7), skin, torso, [0, 0, 0]).scale.set(1, 1.05, .8);
-  mesh(new THREE.SphereGeometry(.4, 8, 7), light, torso, [0, .5, .02]).scale.set(1, .86, .8);
-  mesh(new THREE.SphereGeometry(.34, 8, 7), skin, torso, [0, .77, .06]);
-  // Horns and glowing eyes make the silhouette legible at phone size.
-  for (const side of [-1, 1]) {
-    const horn = mesh(new THREE.ConeGeometry(.13, .48, 5), mats.horn, torso, [side * .25, 1.06, -.01]);
-    horn.rotation.z = side * -.42;
-    mesh(new THREE.SphereGeometry(.075, 6, 5), mats.eye, torso, [side * .14, .8, .34], false);
-  }
-  mesh(new THREE.BoxGeometry(.25, .07, .05), mats.dark, torso, [0, .61, .37], false);
-  const armL = group(torso, [-.53, .2, 0]);
-  limb(armL, skin, .7, .17, [0, -.28, .02], [0, 0, -.3]);
-  mesh(new THREE.ConeGeometry(.17, .3, 5), light, armL, [-.05, -.62, .05]);
-  const armR = group(torso, [.53, .2, 0]);
-  limb(armR, skin, .7, .17, [0, -.28, .02], [0, 0, .3]);
-  mesh(new THREE.ConeGeometry(.17, .3, 5), light, armR, [.05, -.62, .05]);
-  const legL = group(root, [-.23, .42, 0]);
-  limb(legL, skin, .66, .18, [0, -.27, 0]);
-  const legR = group(root, [.23, .42, 0]);
-  limb(legR, skin, .66, .18, [0, -.27, 0]);
-  return { root, torso, armL, armR, legL, legR };
+function setAction(actor, name, loop = true) {
+  const action = actor.actions[name.toLowerCase()];
+  if (!action || actor.current === name.toLowerCase()) return;
+  const previous = actor.current ? actor.actions[actor.current] : null;
+  action.reset();
+  action.enabled = true;
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  action.clampWhenFinished = !loop;
+  action.fadeIn(.18).play();
+  if (previous) previous.fadeOut(.18);
+  actor.current = name.toLowerCase();
 }
-
-const hero = makeHero();
-const brute = makeMonster(1.48, -1.38, .94, 0);
-const mossling = makeMonster(-1.9, -2.05, .76, 1);
-
+const actorsReady = Promise.all([
+  loadActor(assetUrls.hero, [-.55, .2, 1.05], 2.25),
+  loadActor(assetUrls.brute, [1.48, .22, -1.38], 1.55),
+  loadActor(assetUrls.mossling, [-1.9, .22, -2.05], 1.25)
+]).then(([hero, brute, mossling]) => {
+  setAction(hero, 'idle');
+  setAction(brute, 'idle');
+  setAction(mossling, 'idle');
+  return { hero, brute, mossling };
+});
+let actors = null;
+actorsReady.then((result) => {
+  actors = result;
+  loading.classList.add('done');
+}).catch((error) => {
+  console.error('Could not load the 3D characters:', error);
+  loading.textContent = 'No se pudieron cargar los personajes. Recargá la página.';
+});
 // Ground contact shadows are soft and local; no fullscreen haze or white overlay.
 for (const [x, z, radius] of [[-.55,1.05,.82],[1.48,-1.38,.72],[-1.9,-2.05,.6]]) {
   const shadow = mesh(new THREE.CircleGeometry(radius, 20), new THREE.MeshBasicMaterial({ color: '#111b20', transparent: true, opacity: .34, depthWrite: false }), scene, [x,.245,z], false);
@@ -219,88 +217,63 @@ function setHud(phase, text, hp, enemies) {
   heroHp.textContent = Math.round(hp);
   enemyHp.textContent = Math.round(enemies);
 }
-function animateBattle(time) {
+function animateBattle(time, delta) {
+  if (!actors) return;
   const t = time % duration;
-  const bob = Math.sin(time * 7) * .035;
+  const { hero, brute, mossling } = actors;
   hero.root.position.x = -.55 + Math.sin(t * .45) * .08;
   hero.root.position.z = 1.05 - smooth(1, 4, t) * .42 + smooth(8, 10, t) * .24;
-  hero.root.position.y = .2 + bob;
   hero.root.rotation.y = Math.sin(t * .3) * .08;
-  hero.leftLeg.rotation.x = Math.sin(time * 7) * .24;
-  hero.rightLeg.rotation.x = -Math.sin(time * 7) * .24;
-  hero.leftArm.rotation.x = Math.sin(time * 7) * .12;
-  hero.rightArm.rotation.x = -.15;
-
   brute.root.position.x = 1.48 - smooth(2.8, 4.2, t) * .48 + smooth(8, 9.5, t) * .32;
   brute.root.position.z = -1.38 + smooth(2.8, 4.2, t) * .55 - smooth(8, 9.5, t) * .25;
   brute.root.rotation.y = -.12 + Math.sin(time * 2) * .08;
-  brute.torso.rotation.x = Math.sin(time * 2.4) * .045;
-  brute.armL.rotation.x = Math.sin(time * 3) * .16;
-  brute.armR.rotation.x = Math.cos(time * 3) * .16;
   mossling.root.position.x = -1.9 + Math.sin(time * 1.1) * .12;
   mossling.root.position.z = -2.05 + Math.sin(time * 1.5) * .08;
   mossling.root.rotation.y = .18 + Math.sin(time * 1.7) * .12;
-  mossling.armL.rotation.x = Math.sin(time * 2.5) * .2;
-  mossling.armR.rotation.x = Math.cos(time * 2.5) * .2;
 
-  // Four clear beats: threat, monster lunge, hero counter, finishing strike.
+  // Named rig animations drive each beat of the fight.
   if (t < 3) {
-    hero.rightArm.rotation.x = -.35;
-    hero.rightArm.rotation.z = -.12;
-    brute.armL.rotation.x = -.2;
+    setAction(hero, 'idle'); setAction(brute, 'idle'); setAction(mossling, 'idle');
     setHud('ENEMIGOS DETECTADOS', 'Tres criaturas bloquean el camino.', 100, 100);
   } else if (t < 6) {
+    setAction(hero, 'hit', false); setAction(brute, 'attack', false); setAction(mossling, 'idle');
     const k = smooth(3, 4.2, t) * (1 - smooth(4.8, 6, t));
     brute.root.position.x -= k * .5;
     brute.root.position.z += k * .65;
-    brute.armL.rotation.x = -1.3 * k;
     hero.root.position.x -= k * .18;
-    hero.leftArm.rotation.x = -.7 * k;
     setHud('¡ATAQUE ENEMIGO!', 'Una de las bestias se lanza al ataque.', 82, 100);
   } else if (t < 10) {
-    const swing = Math.sin(smooth(6, 7.1, t) * Math.PI);
-    hero.rightArm.rotation.x = -1.7 * swing - .25;
-    hero.rightArm.rotation.z = -.85 * swing;
-    hero.sword.rotation.z = -.45 * swing;
-    brute.root.rotation.z = .75 * smooth(6.8, 7.8, t) * (1 - smooth(8.8, 9.8, t));
+    setAction(hero, 'attack', false); setAction(brute, 'hit', false); setAction(mossling, 'idle');
+    brute.root.rotation.z = .42 * smooth(6.8, 7.8, t) * (1 - smooth(8.8, 9.8, t));
     brute.root.position.x += smooth(6.8, 7.5, t) * (1 - smooth(8.8, 9.8, t)) * .48;
-    brute.armR.rotation.x = 1.2 * swing;
     setHud('CONTRAATAQUE', 'El héroe encuentra una abertura.', 82, 62);
     if (t > 7 && t < 7.08) pulseFlash();
   } else if (t < 15) {
+    setAction(hero, 'special', false); setAction(brute, 'idle'); setAction(mossling, 'attack', false);
     const charge = smooth(10, 11.3, t) * (1 - smooth(13.4, 14.8, t));
     mossling.root.position.x += charge * .72;
     mossling.root.position.z += charge * .55;
-    mossling.armR.rotation.x = -1.3 * charge;
-    hero.rightArm.rotation.x = -.4 - .6 * Math.sin(t * 4);
     hero.root.rotation.y = -.35 * charge;
     setHud('SEGUNDA OLEADA', 'La criatura pequeña intenta rodearlo.', 72, 62);
     if (t > 12.9 && t < 12.98) pulseFlash();
   } else if (t < 19) {
-    const finisher = Math.sin(smooth(15, 16.2, t) * Math.PI);
-    hero.rightArm.rotation.x = -1.9 * finisher - .2;
-    hero.rightArm.rotation.z = -.95 * finisher;
-    hero.sword.rotation.z = -.6 * finisher;
-    mossling.root.rotation.z = .85 * smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t));
+    setAction(hero, 'attack', false); setAction(brute, 'dead', false); setAction(mossling, 'hit', false);
+    mossling.root.rotation.z = .38 * smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t));
     mossling.root.position.x -= smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t)) * .42;
-    brute.root.rotation.z = -.3 * smooth(16, 17, t);
     setHud('GOLPE FINAL', 'Dos enemigos. Un solo aventurero.', 64, 24);
     if (t > 16.1 && t < 16.18) pulseFlash();
   } else {
-    hero.rightArm.rotation.x = -.85;
-    hero.rightArm.rotation.z = -.25;
-    hero.root.rotation.y = -.12;
-    brute.root.rotation.z = .25;
-    mossling.root.rotation.z = .18;
+    setAction(hero, 'idle'); setAction(brute, 'dead', false); setAction(mossling, 'dead', false);
     setHud('ARENA SUPERADA', 'La escena sigue viva. El combate vuelve a empezar.', 64, 12);
   }
-
+  hero.mixer.update(delta);
+  brute.mixer.update(delta);
+  mossling.mixer.update(delta);
   particles.children.forEach((p, i) => {
     p.position.y = .55 + ((time * (.12 + (i % 4) * .025) + p.userData.offset) % 4.2);
     p.position.x += Math.sin(time + p.userData.offset) * .0008;
   });
 }
-
 function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -318,13 +291,11 @@ function render() {
   requestAnimationFrame(render);
   const delta = Math.min(clock.getDelta(), .05);
   elapsed += delta;
-  animateBattle(elapsed);
+  animateBattle(elapsed, delta);
   fireLight.intensity = 20 + Math.sin(elapsed * 7) * 4;
   renderer.render(scene, camera);
 }
 render();
-loading.classList.add('done');
-
 document.querySelector('#replay').addEventListener('click', () => {
   elapsed = 0;
   lastPhase = -1;
