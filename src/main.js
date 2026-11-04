@@ -126,11 +126,17 @@ const assetUrls = {
   duck: 'https://gobkit.com/freebies/animal/Duck.glb',
   bat: 'https://gobkit.com/freebies/animal/Bat.glb'
 };
-async function loadActor(url, position, uniformScale) {
+async function loadActor(url, position, uniformScale, targetHeight = null) {
   const gltf = await loader.loadAsync(url);
   const model = cloneSkinned(gltf.scene);
   // Fixed, conservative scale multiplier: never infer scale from animated/skinned bounds.
   model.scale.setScalar(uniformScale);
+  if (targetHeight) {
+    model.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(model);
+    const height = bounds.max.y - bounds.min.y;
+    if (height > 0.001) model.scale.multiplyScalar(targetHeight / height);
+  }
   model.position.set(0, 0, 0);
   model.traverse((object) => {
     if (object.isMesh) {
@@ -170,13 +176,39 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-// The scene contains only the main knight. No enemy actors are created.
-let actors = { hero: null };
-const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then((hero) => {
+// The knight is accompanied by a corgi and a duck. They follow behind, never attack.
+let actors = { hero: null, companions: [] };
+const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then(async (hero) => {
   hero.root.rotation.y = Math.PI;
   setAction(hero, 'idle');
   actors.hero = hero;
   loading.classList.add('done');
+
+  const companionSpecs = [
+    { url: assetUrls.corgi, side: -.62, distance: 1.55, height: .82, phase: 0 },
+    { url: assetUrls.duck, side: .62, distance: 1.9, height: .68, phase: 1.8 }
+  ];
+  const loaded = await Promise.allSettled(companionSpecs.map((spec) =>
+    loadActor(spec.url, [spec.side, .2, 2.2], 1, spec.height)
+  ));
+  loaded.forEach((result, index) => {
+    if (result.status !== 'fulfilled') {
+      console.warn('Could not load companion:', result.reason);
+      return;
+    }
+    const companion = result.value;
+    companion.side = companionSpecs[index].side;
+    companion.distance = companionSpecs[index].distance;
+    companion.phase = companionSpecs[index].phase;
+    companion.root.rotation.y = Math.PI;
+    const names = Object.keys(companion.actions);
+    const idle = names.find(name => name.includes('idle'));
+    const walk = names.find(name => name.includes('walk') || name.includes('run'));
+    companion.idleAction = idle || null;
+    companion.walkAction = walk || null;
+    if (companion.idleAction) setAction(companion, companion.idleAction);
+    actors.companions.push(companion);
+  });
 }).catch((error) => {
   console.error('Could not load the knight model:', error);
   loading.textContent = 'No se pudo cargar el personaje. Recargá la página.';
@@ -267,6 +299,27 @@ function updateActors(delta) {
   }
 
   hero.mixer.update(delta);
+
+  // Keep both companions a little behind the knight, with gentle follow smoothing.
+  const forwardX = Math.sin(hero.root.rotation.y);
+  const forwardZ = Math.cos(hero.root.rotation.y);
+  const sideX = Math.cos(hero.root.rotation.y);
+  const sideZ = -Math.sin(hero.root.rotation.y);
+  actors.companions.forEach((companion) => {
+    const targetX = hero.root.position.x - forwardX * companion.distance + sideX * companion.side;
+    const targetZ = hero.root.position.z - forwardZ * companion.distance + sideZ * companion.side;
+    const dx = targetX - companion.root.position.x;
+    const dz = targetZ - companion.root.position.z;
+    const distanceToTarget = Math.hypot(dx, dz);
+    companion.root.position.x += dx * Math.min(1, delta * 4.5);
+    companion.root.position.z += dz * Math.min(1, delta * 4.5);
+    companion.root.position.y = .2 + Math.sin(elapsed * 3.2 + companion.phase) * .025;
+    companion.root.rotation.y = hero.root.rotation.y;
+    const following = distanceToTarget > .16;
+    const desiredAction = following ? companion.walkAction : companion.idleAction;
+    if (desiredAction && companion.current !== desiredAction) setAction(companion, desiredAction);
+    companion.mixer.update(delta);
+  });
 }
 
 // Floating embers remain independent from the character controller.
