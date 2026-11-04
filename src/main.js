@@ -168,7 +168,8 @@ function createFallbackEnemy(kind, position, scale) {
   for (const x of [-.25, .25]) for (const z of [-.32, .32]) {
     mesh(new THREE.CylinderGeometry(.07, .08, .42, 5), bodyMat, root, [x, .27, z]);
   }
-  root.scale.setScalar(scale * .55);
+  // Keep the small enemies proportionate to the knight; scale is now a direct world multiplier.
+  root.scale.setScalar(scale);
   return { root, model: root, mixer: null, actions: {}, current: null, actionTimer: 0,
     home: new THREE.Vector3(...position), speed: 0, fallback: true, bob: Math.random() * 6 };
 }
@@ -194,9 +195,9 @@ function setAction(actor, name, loop = true, restart = false) {
 
 // Create enemies immediately; their visibility must not depend on the hero GLB loading.
 const animalSpecs = [
-  ['corgi', [-3.25, .22, 3.15], 3.25],
-  ['duck', [0, .22, 3.75], 3.0],
-  ['bat', [3.25, .22, 3.15], 3.2]
+  ['corgi', [-3.05, .22, 2.9], .9],
+  ['duck', [0, .22, 3.35], .82],
+  ['bat', [3.05, .22, 2.9], .86]
 ];
 const animals = animalSpecs.map(([kind, position, scale]) =>
   createFallbackEnemy(kind, position, scale)
@@ -229,7 +230,7 @@ window.addEventListener('keydown', (event) => {
     if (key !== ' ') event.preventDefault();
     keysDown.add(key);
   }
-  if (key === ' ' && actors) { setAction(actors.hero, 'attack', false, true); actors.hero.actionTimer = 0; }
+  if (key === ' ' && actors?.hero) { setAction(actors.hero, 'attack', false, true); actors.hero.actionTimer = 0; }
 });
 window.addEventListener('keyup', (event) => keysDown.delete(event.key.toLowerCase()));
 window.addEventListener('blur', () => keysDown.clear());
@@ -261,7 +262,7 @@ if (joystick && stick) {
 }
 canvas.style.touchAction = 'manipulation';
 canvas.addEventListener('pointerdown', (event) => {
-  if (!actors) return;
+  if (!actors?.hero) return;
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -330,7 +331,14 @@ function updateActors(delta) {
     }
   }
 
-  for (const animal of animals) moveEnemy(animal, hero, delta);
+  // Keep fallback enemies anchored in view so they don't converge behind the knight.
+  for (const animal of animals) {
+    if (animal.fallback) {
+      animal.root.position.y = .22 + Math.sin(elapsed * 2.2 + animal.bob) * .035;
+    } else {
+      moveEnemy(animal, hero, delta);
+    }
+  }
   hero.mixer.update(delta);
   for (const animal of animals) if (animal.mixer) animal.mixer.update(delta);
 }
