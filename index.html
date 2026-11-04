@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#b9d6c2" />
+    <title>Wildbound — Find your way</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="hero">
+      <canvas id="world" aria-label="A 3D adventurer and their creature exploring a forest"></canvas>
+      <div class="scene-vignette"></div>
+      <nav class="nav">
+        <a class="brand" href="#"><span class="brand-mark">✳</span> WILDBOUND</a>
+        <div class="nav-links"><a href="#world">The world</a><a href="#companions">Companions</a><a href="#journey">Your journey</a></div>
+        <a class="nav-cta" href="#journey">Start exploring <span>↗</span></a>
+      </nav>
+      <section class="hero-copy">
+        <div class="eyebrow"><span class="eyebrow-dot"></span> A WORLD BEYOND THE MAP</div>
+        <h1>Every great<br>adventure starts<br><em>with a friend.</em></h1>
+        <p>Step into a living world, meet your companion, and discover what waits beyond the next hill.</p>
+        <div class="actions"><a class="button button-primary" href="#journey">Begin your journey <span>↗</span></a><a class="button button-quiet" href="#companions"><span class="play">▶</span> Meet your companion</a></div>
+        <div class="hero-note"><span class="note-line"></span><span>YOUR STORY IS JUST BEGINNING</span></div>
+      </section>
+      <div class="scene-label"><span class="scene-label-dot"></span><span>GREENHOLLOW FOREST</span><small>01 / 04</small></div>
+      <div class="loading" id="loading"><span class="loader"></span><span>Preparing your world…</span></div>
+      <div class="bottom-hint"><span>SCROLL TO EXPLORE</span><span class="hint-line"></span><span>↓</span></div>
+    </main>
+    <section class="below" id="companions"><span class="section-kicker">THE BOND THAT MOVES YOU</span><h2>Never explore alone.</h2><p>Some paths are easier when you have someone by your side.</p></section>
+    <section class="journey" id="journey"><div><span class="section-kicker">THE WORLD IS YOURS</span><h2>Take the first step.</h2><p>Adventure is waiting just beyond the trees.</p></div><a class="button button-primary" href="#world">Explore the world ↗</a></section>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
