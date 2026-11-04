@@ -4,15 +4,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const canvas = document.querySelector('#world');
 const loading = document.querySelector('#loading');
-const phaseLabel = document.querySelector('#phase');
-const caption = document.querySelector('#caption');
-const heroHealth = document.querySelector('#hero-health');
-const enemyHealth = document.querySelector('#enemy-health');
-const heroHp = document.querySelector('#hero-hp');
-const enemyHp = document.querySelector('#enemy-hp');
-const flash = document.querySelector('#flash');
-const recordButton = document.querySelector('#record');
-const recordNote = document.querySelector('#record-note');
+
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#1b2a32');
@@ -119,9 +111,9 @@ for (const x of [-3.65, 3.65]) {
 // Rigged CC0 characters are loaded as real GLB assets, not approximated with primitive shapes.
 const loader = new GLTFLoader();
 const assetUrls = {
-  hero: 'https://gobkit.com/freebies/human003/Footman.glb',
-  brute: 'https://gobkit.com/freebies/minion/minion-a01.glb',
-  mossling: 'https://gobkit.com/freebies/minion/minion-b01.glb'
+  hero: 'https://gobkit.com/freebies/human003/KnightCaptain.glb',
+  brute: 'https://gobkit.com/freebies/human011/WerewolfCaptain.glb',
+  mossling: 'https://gobkit.com/freebies/human011/StitchedBrute.glb'
 };
 async function loadActor(url, position, targetHeight) {
   const gltf = await loader.loadAsync(url);
@@ -161,8 +153,8 @@ function setAction(actor, name, loop = true) {
 }
 const actorsReady = Promise.all([
   loadActor(assetUrls.hero, [-.55, .2, 1.05], 2.25),
-  loadActor(assetUrls.brute, [1.48, .22, -1.38], 1.55),
-  loadActor(assetUrls.mossling, [-1.9, .22, -2.05], 1.25)
+  loadActor(assetUrls.brute, [1.48, .22, -1.38], 2.05),
+  loadActor(assetUrls.mossling, [-1.9, .22, -2.05], 1.8)
 ]).then(([hero, brute, mossling]) => {
   setAction(hero, 'idle');
   setAction(brute, 'idle');
@@ -204,67 +196,54 @@ const smooth = (a, b, x) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
 };
-function pulseFlash() {
-  flash.classList.remove('hit');
-  void flash.offsetWidth;
-  flash.classList.add('hit');
-}
-function setHud(phase, text, hp, enemies) {
-  phaseLabel.textContent = phase;
-  caption.textContent = text;
-  heroHealth.style.width = hp + '%';
-  enemyHealth.style.width = enemies + '%';
-  heroHp.textContent = Math.round(hp);
-  enemyHp.textContent = Math.round(enemies);
-}
 function animateBattle(time, delta) {
   if (!actors) return;
   const t = time % duration;
   const { hero, brute, mossling } = actors;
-  hero.root.position.x = -.55 + Math.sin(t * .45) * .08;
-  hero.root.position.z = 1.05 - smooth(1, 4, t) * .42 + smooth(8, 10, t) * .24;
-  hero.root.rotation.y = Math.sin(t * .3) * .08;
+  hero.root.position.x = -.55 + Math.sin(t * .45) * .04;
+  hero.root.position.z = 1.05 - smooth(1, 4, t) * .28 + smooth(8, 10, t) * .18;
+  hero.root.rotation.y = Math.PI + Math.sin(t * .3) * .08;
   brute.root.position.x = 1.48 - smooth(2.8, 4.2, t) * .48 + smooth(8, 9.5, t) * .32;
   brute.root.position.z = -1.38 + smooth(2.8, 4.2, t) * .55 - smooth(8, 9.5, t) * .25;
-  brute.root.rotation.y = -.12 + Math.sin(time * 2) * .08;
+  brute.root.rotation.y = Math.sin(time * 2) * .08;
   mossling.root.position.x = -1.9 + Math.sin(time * 1.1) * .12;
   mossling.root.position.z = -2.05 + Math.sin(time * 1.5) * .08;
-  mossling.root.rotation.y = .18 + Math.sin(time * 1.7) * .12;
+  mossling.root.rotation.y = Math.sin(time * 1.7) * .08;
 
   // Named rig animations drive each beat of the fight.
   if (t < 3) {
     setAction(hero, 'idle'); setAction(brute, 'idle'); setAction(mossling, 'idle');
-    setHud('ENEMIGOS DETECTADOS', 'Tres criaturas bloquean el camino.', 100, 100);
+    
   } else if (t < 6) {
     setAction(hero, 'hit', false); setAction(brute, 'attack', false); setAction(mossling, 'idle');
     const k = smooth(3, 4.2, t) * (1 - smooth(4.8, 6, t));
     brute.root.position.x -= k * .5;
     brute.root.position.z += k * .65;
     hero.root.position.x -= k * .18;
-    setHud('¡ATAQUE ENEMIGO!', 'Una de las bestias se lanza al ataque.', 82, 100);
+    
   } else if (t < 10) {
     setAction(hero, 'attack', false); setAction(brute, 'hit', false); setAction(mossling, 'idle');
     brute.root.rotation.z = .42 * smooth(6.8, 7.8, t) * (1 - smooth(8.8, 9.8, t));
     brute.root.position.x += smooth(6.8, 7.5, t) * (1 - smooth(8.8, 9.8, t)) * .48;
-    setHud('CONTRAATAQUE', 'El héroe encuentra una abertura.', 82, 62);
-    if (t > 7 && t < 7.08) pulseFlash();
+    
+
   } else if (t < 15) {
     setAction(hero, 'special', false); setAction(brute, 'idle'); setAction(mossling, 'attack', false);
     const charge = smooth(10, 11.3, t) * (1 - smooth(13.4, 14.8, t));
     mossling.root.position.x += charge * .72;
     mossling.root.position.z += charge * .55;
     hero.root.rotation.y = -.35 * charge;
-    setHud('SEGUNDA OLEADA', 'La criatura pequeña intenta rodearlo.', 72, 62);
-    if (t > 12.9 && t < 12.98) pulseFlash();
+    
+
   } else if (t < 19) {
     setAction(hero, 'attack', false); setAction(brute, 'dead', false); setAction(mossling, 'hit', false);
     mossling.root.rotation.z = .38 * smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t));
     mossling.root.position.x -= smooth(15.6, 16.4, t) * (1 - smooth(17.8, 18.8, t)) * .42;
-    setHud('GOLPE FINAL', 'Dos enemigos. Un solo aventurero.', 64, 24);
-    if (t > 16.1 && t < 16.18) pulseFlash();
+    
+
   } else {
-    setAction(hero, 'idle'); setAction(brute, 'dead', false); setAction(mossling, 'dead', false);
-    setHud('ARENA SUPERADA', 'La escena sigue viva. El combate vuelve a empezar.', 64, 12);
+    setAction(hero, 'idle'); setAction(brute, 'death', false); setAction(mossling, 'death', false);
+    
   }
   hero.mixer.update(delta);
   brute.mixer.update(delta);
@@ -296,57 +275,3 @@ function render() {
   renderer.render(scene, camera);
 }
 render();
-document.querySelector('#replay').addEventListener('click', () => {
-  elapsed = 0;
-  lastPhase = -1;
-  caption.textContent = 'La batalla comienza otra vez.';
-});
-
-function supportedMime() {
-  const types = ['video/mp4;codecs=h264', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
-  return types.find((type) => window.MediaRecorder && MediaRecorder.isTypeSupported(type)) || '';
-}
-recordButton.addEventListener('click', () => {
-  if (recording) return;
-  if (!canvas.captureStream || !window.MediaRecorder) {
-    recordNote.textContent = 'Tu navegador no permite grabar esta escena. Probá desde Chrome o Edge en escritorio.';
-    return;
-  }
-  const mimeType = supportedMime();
-  if (!mimeType) {
-    recordNote.textContent = 'Este navegador no ofrece un formato de grabación compatible.';
-    return;
-  }
-  recordedChunks = [];
-  const stream = canvas.captureStream(30);
-  recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
-  recorder.ondataavailable = (event) => { if (event.data.size) recordedChunks.push(event.data); };
-  recorder.onstop = () => {
-    const isMp4 = mimeType.startsWith('video/mp4');
-    const blob = new Blob(recordedChunks, { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = isMp4 ? 'the-last-stand.mp4' : 'the-last-stand.webm';
-    link.click();
-    URL.revokeObjectURL(url);
-    stream.getTracks().forEach((track) => track.stop());
-    recording = false;
-    recordButton.disabled = false;
-    recordButton.classList.remove('recording');
-    recordButton.innerHTML = '<span class="record-dot"></span> GRABAR ESCENA';
-    recordNote.textContent = isMp4
-      ? 'MP4 descargado. Ya podés llevarlo a Instagram.'
-      : 'WebM descargado. Si necesitás MP4, convertí el archivo antes de subirlo a Instagram.';
-  };
-  recording = true;
-  recordButton.disabled = true;
-  recordButton.classList.add('recording');
-  recordButton.innerHTML = '<span class="record-dot"></span> GRABANDO 22 S';
-  recordNote.textContent = 'Grabando la escena en tiempo real…';
-  elapsed = 0;
-  recorder.start();
-  window.setTimeout(() => {
-    if (recorder && recorder.state === 'recording') recorder.stop();
-  }, duration * 1000);
-});
