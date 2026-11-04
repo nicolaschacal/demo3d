@@ -159,10 +159,6 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-const actorsReady = Promise.all([
-  loadActor(assetUrls.hero, [0, .2, 1.05], 3.0),
-  ...[]
-]);
 const actorsReady = loadActor(assetUrls.hero, [0, .2, 1.05], 3.0).then(async (hero) => {
   setAction(hero, 'idle');
   const animalSpecs = [
