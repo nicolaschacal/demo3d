@@ -5,6 +5,16 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 const canvas = document.querySelector('#world');
 const loading = document.querySelector('#loading');
 
+const intro = document.querySelector('#intro');
+const startButton = document.querySelector('#start-button');
+const controlsButton = document.querySelector('#controls-button');
+const controlsPanel = document.querySelector('#controls-panel');
+const closeControls = document.querySelector('#close-controls');
+startButton?.addEventListener('click', () => intro?.classList.add('is-hidden'));
+controlsButton?.addEventListener('click', () => controlsPanel?.classList.toggle('is-visible'));
+closeControls?.addEventListener('click', () => controlsPanel?.classList.remove('is-visible'));
+
+
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#1b2a32');
@@ -141,39 +151,6 @@ async function loadActor(url, position, uniformScale) {
 }
 
 
-function createFallbackEnemy(kind, position, scale) {
-  const root = group(scene, position);
-  const bodyMat = mat(kind === 'corgi' ? '#b97843' : kind === 'duck' ? '#e6c84d' : '#665b83', .85);
-  const darkMat = mat('#302a2a');
-  const body = mesh(new THREE.SphereGeometry(.42, 9, 7), bodyMat, root, [0, .62, 0]);
-  body.scale.set(1.25, .8, 1.65);
-  mesh(new THREE.SphereGeometry(.27, 9, 7), bodyMat, root, [0, .85, .48]);
-  if (kind === 'corgi') {
-    for (const x of [-.18, .18]) {
-      const ear = mesh(new THREE.ConeGeometry(.1, .34, 5), bodyMat, root, [x, 1.13, .52]);
-      ear.rotation.z = x < 0 ? .18 : -.18;
-    }
-  } else if (kind === 'duck') {
-    mesh(new THREE.ConeGeometry(.12, .3, 5), mat('#e58b36'), root, [0, .82, .82]).rotation.x = Math.PI / 2;
-    mesh(new THREE.SphereGeometry(.09, 7, 5), darkMat, root, [-.12, .95, .67]);
-    mesh(new THREE.SphereGeometry(.09, 7, 5), darkMat, root, [.12, .95, .67]);
-  } else {
-    for (const side of [-1, 1]) {
-      const wing = mesh(new THREE.ConeGeometry(.28, .8, 5), bodyMat, root, [side * .55, .65, 0]);
-      wing.rotation.z = side * -1.05;
-    }
-    mesh(new THREE.SphereGeometry(.08, 7, 5), mats.eye, root, [-.12, .91, .68]);
-    mesh(new THREE.SphereGeometry(.08, 7, 5), mats.eye, root, [.12, .91, .68]);
-  }
-  for (const x of [-.25, .25]) for (const z of [-.32, .32]) {
-    mesh(new THREE.CylinderGeometry(.07, .08, .42, 5), bodyMat, root, [x, .27, z]);
-  }
-  // Keep the small enemies proportionate to the knight; scale is now a direct world multiplier.
-  root.scale.setScalar(scale);
-  return { root, model: root, mixer: null, actions: {}, current: null, actionTimer: 0,
-    home: new THREE.Vector3(...position), speed: 0, fallback: true, bob: Math.random() * 6 };
-}
-
 function setAction(actor, name, loop = true, restart = false) {
   const actionName = name.toLowerCase();
   const action = actor.actions[actionName];
@@ -193,24 +170,16 @@ function setAction(actor, name, loop = true, restart = false) {
   return true;
 }
 
-// Create enemies immediately; their visibility must not depend on the hero GLB loading.
-const animalSpecs = [
-  ['corgi', [-3.05, .22, 2.9], .9],
-  ['duck', [0, .22, 3.35], .82],
-  ['bat', [3.05, .22, 2.9], .86]
-];
-const animals = animalSpecs.map(([kind, position, scale]) =>
-  createFallbackEnemy(kind, position, scale)
-);
-let actors = { hero: null, animals };
+// The scene contains only the main knight. No enemy actors are created.
+let actors = { hero: null };
 const actorsReady = loadActor(assetUrls.hero, [0, .2, .65], 6.0).then((hero) => {
   hero.root.rotation.y = Math.PI;
   setAction(hero, 'idle');
   actors.hero = hero;
   loading.classList.add('done');
 }).catch((error) => {
-  console.error('Could not load the knight model; animal enemies remain visible:', error);
-  loading.textContent = 'El caballero no pudo cargar. Los enemigos siguen disponibles.';
+  console.error('Could not load the knight model:', error);
+  loading.textContent = 'No se pudo cargar el personaje. Recargá la página.';
   loading.classList.add('done');
 });
 
@@ -274,42 +243,8 @@ canvas.addEventListener('pointerdown', (event) => {
   nextHeroAttack = nextHeroAttack === 'attack' ? 'special' : 'attack';
 }, { passive: false });
 
-function faceToward(actor, target) {
-  const dx = target.x - actor.root.position.x;
-  const dz = target.z - actor.root.position.z;
-  actor.root.rotation.y = Math.atan2(dx, dz);
-}
-
-function moveEnemy(actor, hero, delta) {
-  const direction = new THREE.Vector3(
-    hero.root.position.x - actor.root.position.x,
-    0,
-    hero.root.position.z - actor.root.position.z
-  );
-  const distance = direction.length();
-  faceToward(actor, hero.root);
-
-  if (distance > 2.0) {
-    const speed = distance > 2.8 ? 1.05 : .72;
-    // These animal rigs provide a walk cycle; don't request a missing run clip.
-    if (!actor.fallback) setAction(actor, actor.actions.walk ? 'walk' : 'idle');
-    else actor.root.position.y = .22 + Math.sin(elapsed * 5 + actor.bob) * .08;
-    direction.normalize();
-    actor.root.position.x += direction.x * speed * delta;
-    actor.root.position.z += direction.z * speed * delta;
-  } else {
-    if (!actor.fallback) setAction(actor, 'idle');
-  }
-}
-
 function updateActors(delta) {
-  if (!actors) return;
-  if (!actors.hero) {
-    for (const animal of actors.animals) {
-      animal.root.position.y = .22 + Math.sin(elapsed * 5 + animal.bob) * .08;
-    }
-    return;
-  }
+  if (!actors?.hero) return;
   let x = moveVector.x + (keysDown.has('d') || keysDown.has('arrowright') ? 1 : 0) - (keysDown.has('a') || keysDown.has('arrowleft') ? 1 : 0);
   let z = -moveVector.y - (keysDown.has('w') || keysDown.has('arrowup') ? 1 : 0) + (keysDown.has('s') || keysDown.has('arrowdown') ? 1 : 0);
   const inputLength = Math.hypot(x, z);
@@ -320,7 +255,7 @@ function updateActors(delta) {
     actors.hero.root.rotation.y = Math.atan2(x, z);
     if (actors.hero.current === 'idle') setAction(actors.hero, 'walk');
   } else if (actors.hero.current === 'walk') setAction(actors.hero, 'idle');
-  const { hero, animals } = actors;
+  const { hero } = actors;
 
   hero.actionTimer += delta;
   if (hero.current === 'attack' || hero.current === 'special') {
@@ -331,16 +266,7 @@ function updateActors(delta) {
     }
   }
 
-  // Keep fallback enemies anchored in view so they don't converge behind the knight.
-  for (const animal of animals) {
-    if (animal.fallback) {
-      animal.root.position.y = .22 + Math.sin(elapsed * 2.2 + animal.bob) * .035;
-    } else {
-      moveEnemy(animal, hero, delta);
-    }
-  }
   hero.mixer.update(delta);
-  for (const animal of animals) if (animal.mixer) animal.mixer.update(delta);
 }
 
 // Floating embers remain independent from the character controller.
